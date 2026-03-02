@@ -101,6 +101,15 @@ export interface PortActivityMessage {
   type: "ACTIVITY";
 }
 
+/** Sent from background → page over the port when lock status changes. */
+export interface PortStatusMessage {
+  type: "STATUS_CHANGED";
+  lockStatus: LockStatus;
+}
+
+/** Union of all messages that can flow over the keep-alive port. */
+export type PortMessage = PortActivityMessage | PortStatusMessage;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

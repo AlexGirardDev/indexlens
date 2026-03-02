@@ -9,7 +9,7 @@
 import type {
   RuntimeMessage,
   MessageResponseMap,
-  PortActivityMessage,
+  PortMessage,
   SessionStatus,
   LockStatus,
 } from "./types";
@@ -50,6 +50,9 @@ let lastActivity: number = Date.now();
 let timeoutMs: number = DEFAULT_TIMEOUT_MS;
 let idleInterval: ReturnType<typeof setInterval> | null = null;
 
+/** Connected keep-alive ports for broadcasting status changes. */
+const connectedPorts = new Set<chrome.runtime.Port>();
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -62,6 +65,18 @@ function touchActivity(): void {
   lastActivity = Date.now();
 }
 
+/** Send a status update to all connected pages. */
+function broadcastStatus(): void {
+  const msg: PortMessage = { type: "STATUS_CHANGED", lockStatus };
+  for (const port of connectedPorts) {
+    try {
+      port.postMessage(msg);
+    } catch {
+      connectedPorts.delete(port);
+    }
+  }
+}
+
 function lockNow(): void {
   derivedKey = null;
   lockStatus = "locked";
@@ -69,6 +84,7 @@ function lockNow(): void {
     clearInterval(idleInterval);
     idleInterval = null;
   }
+  broadcastStatus();
 }
 
 function startIdleTimer(): void {
@@ -249,15 +265,16 @@ chrome.runtime.onMessage.addListener(
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== KEEPALIVE_PORT_NAME) return;
 
+  connectedPorts.add(port);
   touchActivity();
 
-  port.onMessage.addListener((msg: PortActivityMessage) => {
+  port.onMessage.addListener((msg: PortMessage) => {
     if (msg.type === "ACTIVITY") {
       touchActivity();
     }
   });
 
   port.onDisconnect.addListener(() => {
-    // Port closed — the page was closed. Timer continues in background.
+    connectedPorts.delete(port);
   });
 });
