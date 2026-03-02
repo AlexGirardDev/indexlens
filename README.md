@@ -1,73 +1,155 @@
-# React + TypeScript + Vite
+# IndexLens
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Chrome extension for viewing Elasticsearch data with encrypted credential storage.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Prerequisites
 
-## React Compiler
+- Node.js 20+
+- npm
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+### Install & Build
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Lint & Type-Check
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```bash
+npm run lint
+npm run build   # runs tsc -b before vite build
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Load in Chrome
+
+1. Run `npm run build` to produce the `dist/` folder.
+2. Open `chrome://extensions` and enable **Developer mode**.
+3. Click **Load unpacked** and select the `dist/` directory.
+4. The extension registers a background service worker (`background.js`) and a full-page options UI (`index.html`).
+5. Click the extension toolbar icon to open IndexLens. The icon opens the full-page UI in a new tab (or focuses an existing one).
+
+### Development Server
+
+```bash
+npm run dev
+```
+
+> **Note:** The dev server is useful for iterating on UI, but `chrome.runtime` APIs (messaging, storage, ports) only work when loaded as an unpacked extension.
+
+### E2E Tests (Playwright)
+
+The project includes Playwright-based end-to-end tests that load the built extension into a real Chromium instance.
+
+#### Prerequisites
+
+1. Build the extension first — tests load from `dist/`:
+   ```bash
+   npm run build
+   ```
+2. Install Playwright browsers (one-time):
+   ```bash
+   npx playwright install chromium
+   ```
+3. On Linux, install the required system libraries:
+   ```bash
+   npx playwright install-deps chromium
+   ```
+
+#### Running Tests
+
+```bash
+npm run test:e2e           # default (headed, required for extensions)
+npm run test:e2e:headed    # explicit headed mode
+```
+
+Chrome extensions cannot run in headless mode, so all E2E tests launch a visible Chromium window. In CI environments, use `xvfb-run` or a similar virtual framebuffer:
+
+```bash
+xvfb-run npm run test:e2e
+```
+
+#### What the Tests Cover
+
+| Test suite | Description |
+|---|---|
+| **First-run setup** | Setup screen appears on first launch; rejects short passphrases; rejects mismatched confirmation; successfully creates passphrase and transitions to unlocked view. |
+| **Unlock and lock lifecycle** | Unlocks with valid passphrase; shows error and stays locked with invalid passphrase. |
+| **Auto-lock after inactivity** | Verifies the session re-locks after the configured idle timeout elapses without user activity. |
+| **Toolbar icon click** | Regression test ensuring clicking the extension icon opens the options page (previously "nothing happens" on click). |
+
+#### Troubleshooting
+
+- **`Cannot find module @rollup/rollup-linux-x64-gnu`** — Delete `node_modules` and `package-lock.json`, then run `npm install` again.
+- **`error while loading shared libraries`** — Run `npx playwright install-deps chromium` to install system dependencies. Requires root/sudo on Linux.
+- **Tests time out in CI** — Ensure a virtual display is available (`xvfb-run`) since extensions require headed mode.
+- **Extension not loading** — Verify `npm run build` completed successfully and the `dist/` directory contains `manifest.json`, `background.js`, and `index.html`.
+
+## Security Model
+
+IndexLens encrypts all Elasticsearch credentials at rest using a passphrase-derived key. The passphrase itself is never stored.
+
+### How It Works
+
+1. **First-run setup** - The user creates a passphrase (minimum 8 characters). A PBKDF2-derived AES-256-GCM key is produced from the passphrase and a random salt. A known verifier string is encrypted and stored alongside the salt so future unlocks can validate the passphrase without persisting it.
+
+2. **Unlocking** - On subsequent sessions the user enters their passphrase. The extension re-derives the key from the stored salt and attempts to decrypt the verifier. If decryption succeeds and the plaintext matches, the session is unlocked and the derived key is held in the service worker's memory.
+
+3. **Credential storage** - Each credential is encrypted with AES-256-GCM using a unique random IV and stored in `chrome.storage.local`. Credentials can only be read, written, or deleted while the session is unlocked. All credential operations return an explicit "Locked" error when the session is locked.
+
+4. **Idle auto-lock** - A configurable inactivity timeout (default: 5 minutes) automatically wipes the derived key and locks the session. The timeout resets only on meaningful user activity (key presses, mouse clicks, window focus) forwarded from the page over a long-lived port to the background worker.
+
+5. **Keep-alive port** - The page maintains a persistent `chrome.runtime.Port` connection to the background. Activity signals travel over this port, and the background broadcasts lock-status changes back to the page for immediate UI updates.
+
+### Key Design Decisions
+
+- **WebCrypto only** - All cryptographic operations use the browser's native `crypto.subtle` API. No third-party crypto libraries.
+- **PBKDF2 with 600,000 iterations** - Provides brute-force resistance for the passphrase derivation step.
+- **AES-256-GCM** - Authenticated encryption ensures both confidentiality and integrity of stored credentials.
+- **In-memory key** - The derived `CryptoKey` lives only in the service worker's memory and is cleared on lock. It is never serialised or written to storage.
+- **Versioned payloads** - Every encrypted envelope carries a version tag for future migration support.
+
+## Manual Verification Checklist
+
+### First-Run Setup
+- [ ] Open the extension for the first time and see the "Welcome to IndexLens" setup screen.
+- [ ] Attempt to submit a passphrase shorter than 8 characters and confirm validation prevents it.
+- [ ] Enter a valid passphrase, intentionally mismatch the confirmation, and verify the error.
+- [ ] Enter a valid passphrase with matching confirmation, click "Create passphrase", and confirm you are taken to the unlocked view.
+
+### Unlock Persistence During Active Use
+- [ ] Close and reopen the extension tab. Confirm you see the lock screen (not setup).
+- [ ] Enter the correct passphrase and verify unlock succeeds.
+- [ ] Interact with the page (click, type) and confirm the session stays unlocked beyond the 5-minute timeout window.
+- [ ] Enter an incorrect passphrase and verify an error is shown.
+
+### Automatic Re-Lock After Idle
+- [ ] Unlock the extension and leave it idle (no mouse/keyboard activity) for longer than 5 minutes.
+- [ ] Confirm the UI transitions back to the lock screen automatically.
+- [ ] Verify you can unlock again with the correct passphrase.
+
+## Project Structure
+
+```
+src/
+  extension/
+    background.ts   - Service worker: lock state, messaging, idle timer, toolbar action
+    types.ts        - Typed message contracts (page <-> background)
+  security/
+    constants.ts    - Crypto & storage constants, default timeout
+    crypto.ts       - WebCrypto primitives (PBKDF2, AES-GCM)
+    storage.ts      - chrome.storage.local wrapper
+  page/
+    lock-state.ts   - Page-side state types, passphrase validation
+    use-lock-session.ts - React hook for lock lifecycle & activity heartbeat
+    setup-screen.tsx    - First-run passphrase creation UI
+    lock-screen.tsx     - Locked passphrase entry UI
+    unlocked-shell.tsx  - Unlocked application shell
+  App.tsx           - Root component routing between lock states
+  main.tsx          - React entry point
+tests/
+  fixtures.ts       - Playwright fixtures: persistent context, extension ID, page
+  extension.spec.ts - E2E tests for lock flow, setup, and toolbar behavior
 ```
