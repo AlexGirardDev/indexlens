@@ -16,13 +16,20 @@ npm install
 npm run build
 ```
 
+### Lint & Type-Check
+
+```bash
+npm run lint
+npm run build   # runs tsc -b before vite build
+```
+
 ### Load in Chrome
 
 1. Run `npm run build` to produce the `dist/` folder.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the `dist/` directory.
 4. The extension registers a background service worker (`background.js`) and a full-page options UI (`index.html`).
-5. Click the extension icon or navigate to the options page to open IndexLens.
+5. Click the extension toolbar icon to open IndexLens. The icon opens the full-page UI in a new tab (or focuses an existing one).
 
 ### Development Server
 
@@ -31,6 +38,54 @@ npm run dev
 ```
 
 > **Note:** The dev server is useful for iterating on UI, but `chrome.runtime` APIs (messaging, storage, ports) only work when loaded as an unpacked extension.
+
+### E2E Tests (Playwright)
+
+The project includes Playwright-based end-to-end tests that load the built extension into a real Chromium instance.
+
+#### Prerequisites
+
+1. Build the extension first — tests load from `dist/`:
+   ```bash
+   npm run build
+   ```
+2. Install Playwright browsers (one-time):
+   ```bash
+   npx playwright install chromium
+   ```
+3. On Linux, install the required system libraries:
+   ```bash
+   npx playwright install-deps chromium
+   ```
+
+#### Running Tests
+
+```bash
+npm run test:e2e           # default (headed, required for extensions)
+npm run test:e2e:headed    # explicit headed mode
+```
+
+Chrome extensions cannot run in headless mode, so all E2E tests launch a visible Chromium window. In CI environments, use `xvfb-run` or a similar virtual framebuffer:
+
+```bash
+xvfb-run npm run test:e2e
+```
+
+#### What the Tests Cover
+
+| Test suite | Description |
+|---|---|
+| **First-run setup** | Setup screen appears on first launch; rejects short passphrases; rejects mismatched confirmation; successfully creates passphrase and transitions to unlocked view. |
+| **Unlock and lock lifecycle** | Unlocks with valid passphrase; shows error and stays locked with invalid passphrase. |
+| **Auto-lock after inactivity** | Verifies the session re-locks after the configured idle timeout elapses without user activity. |
+| **Toolbar icon click** | Regression test ensuring clicking the extension icon opens the options page (previously "nothing happens" on click). |
+
+#### Troubleshooting
+
+- **`Cannot find module @rollup/rollup-linux-x64-gnu`** — Delete `node_modules` and `package-lock.json`, then run `npm install` again.
+- **`error while loading shared libraries`** — Run `npx playwright install-deps chromium` to install system dependencies. Requires root/sudo on Linux.
+- **Tests time out in CI** — Ensure a virtual display is available (`xvfb-run`) since extensions require headed mode.
+- **Extension not loading** — Verify `npm run build` completed successfully and the `dist/` directory contains `manifest.json`, `background.js`, and `index.html`.
 
 ## Security Model
 
@@ -80,7 +135,7 @@ IndexLens encrypts all Elasticsearch credentials at rest using a passphrase-deri
 ```
 src/
   extension/
-    background.ts   - Service worker: lock state, messaging, idle timer
+    background.ts   - Service worker: lock state, messaging, idle timer, toolbar action
     types.ts        - Typed message contracts (page <-> background)
   security/
     constants.ts    - Crypto & storage constants, default timeout
@@ -94,4 +149,7 @@ src/
     unlocked-shell.tsx  - Unlocked application shell
   App.tsx           - Root component routing between lock states
   main.tsx          - React entry point
+tests/
+  fixtures.ts       - Playwright fixtures: persistent context, extension ID, page
+  extension.spec.ts - E2E tests for lock flow, setup, and toolbar behavior
 ```

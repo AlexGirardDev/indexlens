@@ -262,6 +262,30 @@ chrome.runtime.onMessage.addListener(
 // Keep-alive port for activity tracking
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Toolbar icon click → open or focus the options page
+// ---------------------------------------------------------------------------
+
+chrome.action.onClicked.addListener(async () => {
+  const optionsUrl = chrome.runtime.getURL("index.html");
+  const tabs = await chrome.tabs.query({ url: optionsUrl });
+
+  if (tabs.length > 0 && tabs[0].id !== undefined) {
+    // Focus the existing options tab
+    await chrome.tabs.update(tabs[0].id, { active: true });
+    if (tabs[0].windowId !== undefined) {
+      await chrome.windows.update(tabs[0].windowId, { focused: true });
+    }
+  } else {
+    // Open a new tab with the options page
+    await chrome.tabs.create({ url: optionsUrl });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Keep-alive port for activity tracking
+// ---------------------------------------------------------------------------
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== KEEPALIVE_PORT_NAME) return;
 

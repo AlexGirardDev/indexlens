@@ -3,7 +3,7 @@
   "name": "IndexLens",
   "version": "0.0.1",
   "description": "Elasticsearch viewer with encrypted credential storage",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
