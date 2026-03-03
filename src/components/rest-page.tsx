@@ -11,7 +11,16 @@ import {
 } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult, Completion } from "@codemirror/autocomplete";
 import { history, historyKeymap } from "@codemirror/commands";
-import { PlayIcon, CopyIcon, CheckIcon } from "lucide-react";
+import {
+  PlayIcon,
+  CopyIcon,
+  CheckIcon,
+  ClockIcon,
+  BookmarkIcon,
+  SaveIcon,
+  Trash2Icon,
+  PencilIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -20,11 +29,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cmTheme, cmViewerTheme } from "@/lib/codemirror-theme";
 import { esRequest } from "@/lib/es-client";
 import { fetchIndexFields } from "@/lib/es-mapping";
 import { esDslCompletions } from "@/lib/es-query-completions";
 import { useDebounce } from "@/hooks/use-debounce";
+import {
+  loadHistory,
+  saveHistory,
+  addHistoryEntry,
+  loadSavedQueries,
+  saveSavedQueries,
+  addSavedQuery,
+  deleteSavedQuery,
+  renameSavedQuery,
+} from "@/lib/rest-query-storage";
+import type { RestHistoryEntry, SavedQuery } from "@/lib/rest-query-storage";
 import type { MappingField } from "@/lib/es-mapping";
 import type { ClusterConfig } from "@/types/cluster";
 
@@ -108,6 +147,19 @@ function buildEndpointCompletions(indexNames: string[]) {
   };
 }
 
+function formatTimestamp(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (isToday) {
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // ---------------------------------------------------------------------------
 // Raw ES fetch (returns status + body text instead of throwing)
 // ---------------------------------------------------------------------------
@@ -181,10 +233,28 @@ export function RestPage({ cluster }: RestPageProps) {
   const [fields, setFields] = useState<MappingField[]>([]);
   const [copied, setCopied] = useState(false);
 
+  // History & saved queries
+  const [historyEntries, setHistoryEntries] = useState<RestHistoryEntry[]>([]);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<SavedQuery | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Editor key — bump to force editor remount with new initial values
+  const [editorKey, setEditorKey] = useState(0);
+  const initialBodyRef = useRef("{\n  \n}");
+
   const supportsBody = method === "POST" || method === "PUT";
   const bodyRef = useRef("");
   const endpointRef = useRef("");
   const debouncedEndpoint = useDebounce(endpoint, 400);
+
+  // Load history + saved queries when cluster changes
+  useEffect(() => {
+    setHistoryEntries(loadHistory(cluster.id));
+    setSavedQueries(loadSavedQueries(cluster.id));
+  }, [cluster.id]);
 
   // Fetch index names + aliases for endpoint autocomplete
   useEffect(() => {
@@ -230,12 +300,18 @@ export function RestPage({ cluster }: RestPageProps) {
     setLoading(true);
     setError(null);
 
+    const sentMethod = method;
+    const sentBody =
+      sentMethod === "POST" || sentMethod === "PUT"
+        ? bodyRef.current.trim() || ""
+        : "";
+
     try {
       const result = await rawEsRequest(
         cluster,
-        method,
+        sentMethod,
         path,
-        supportsBody ? bodyRef.current.trim() || undefined : undefined,
+        sentBody || undefined,
       );
 
       // Try to pretty-print JSON response
@@ -254,7 +330,16 @@ export function RestPage({ cluster }: RestPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [cluster, method, supportsBody]);
+
+    // Record in history
+    const updated = addHistoryEntry(historyEntries, {
+      method: sentMethod,
+      endpoint: path,
+      body: sentBody,
+    });
+    setHistoryEntries(updated);
+    saveHistory(cluster.id, updated);
+  }, [cluster, method, historyEntries]);
 
   const handleCopy = async () => {
     if (!response) return;
@@ -262,6 +347,53 @@ export function RestPage({ cluster }: RestPageProps) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+
+  // Load a request into the editors
+  const applyRequest = useCallback(
+    (req: { method: string; endpoint: string; body: string }) => {
+      setMethod(req.method);
+      setEndpoint(req.endpoint);
+      endpointRef.current = req.endpoint;
+      bodyRef.current = req.body;
+      initialBodyRef.current = req.body || "{\n  \n}";
+      setEditorKey((k) => k + 1);
+    },
+    [],
+  );
+
+  // Save current request as a named query
+  const handleSaveQuery = useCallback(() => {
+    const name = saveName.trim();
+    if (!name) return;
+    const updated = addSavedQuery(savedQueries, {
+      name,
+      method,
+      endpoint: endpointRef.current.trim(),
+      body: bodyRef.current.trim(),
+    });
+    setSavedQueries(updated);
+    saveSavedQueries(cluster.id, updated);
+    setSaveDialogOpen(false);
+    setSaveName("");
+  }, [cluster.id, method, savedQueries, saveName]);
+
+  const handleDeleteSaved = useCallback(
+    (id: string) => {
+      const updated = deleteSavedQuery(savedQueries, id);
+      setSavedQueries(updated);
+      saveSavedQueries(cluster.id, updated);
+    },
+    [cluster.id, savedQueries],
+  );
+
+  const handleRename = useCallback(() => {
+    if (!renameTarget || !renameValue.trim()) return;
+    const updated = renameSavedQuery(savedQueries, renameTarget.id, renameValue.trim());
+    setSavedQueries(updated);
+    saveSavedQueries(cluster.id, updated);
+    setRenameTarget(null);
+    setRenameValue("");
+  }, [cluster.id, savedQueries, renameTarget, renameValue]);
 
   const responseText = useMemo(() => {
     if (loading) return "Loading...";
@@ -274,7 +406,7 @@ export function RestPage({ cluster }: RestPageProps) {
     <div className="flex flex-1 gap-0 h-full">
       {/* Left panel — Request */}
       <div className="flex-1 flex flex-col p-6 gap-3 border-r min-w-0">
-        {/* Method + Endpoint */}
+        {/* Method + Endpoint + Actions */}
         <div className="flex gap-2 items-center">
           <Select value={method} onValueChange={setMethod}>
             <SelectTrigger className="w-[110px] font-mono">
@@ -290,7 +422,9 @@ export function RestPage({ cluster }: RestPageProps) {
           </Select>
           <div className="flex-1">
             <EndpointEditor
+              key={editorKey}
               indexNames={indexNames}
+              initialValue={endpointRef.current}
               onChange={(v) => {
                 endpointRef.current = v;
                 setEndpoint(v);
@@ -302,14 +436,43 @@ export function RestPage({ cluster }: RestPageProps) {
             <PlayIcon className="size-4" />
             Send
           </Button>
+          {/* History dropdown */}
+          <HistoryDropdown
+            entries={historyEntries}
+            onSelect={applyRequest}
+          />
+          {/* Saved queries dropdown */}
+          <SavedQueriesDropdown
+            queries={savedQueries}
+            onSelect={applyRequest}
+            onDelete={handleDeleteSaved}
+            onRename={(q) => {
+              setRenameTarget(q);
+              setRenameValue(q.name);
+            }}
+          />
+          {/* Save button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSaveName("");
+              setSaveDialogOpen(true);
+            }}
+            title="Save query"
+          >
+            <SaveIcon className="size-4" />
+          </Button>
         </div>
 
         {/* Body editor */}
         <div className="flex-1 overflow-hidden rounded-md border min-h-0 relative">
           {supportsBody ? (
             <BodyEditor
+              key={`body-${editorKey}`}
               fields={fields}
               endpoint={debouncedEndpoint}
+              initialValue={initialBodyRef.current}
               onSend={handleSend}
               onChange={(v) => { bodyRef.current = v; }}
             />
@@ -352,7 +515,196 @@ export function RestPage({ cluster }: RestPageProps) {
           <ResponseViewer value={responseText} />
         </div>
       </div>
+
+      {/* Save query dialog */}
+      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Query</DialogTitle>
+            <DialogDescription>
+              Give this query a name so you can reuse it later.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveQuery();
+            }}
+          >
+            <Input
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="Query name"
+              autoFocus
+            />
+            <DialogFooter className="mt-4">
+              <Button type="submit" disabled={!saveName.trim()}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename saved query dialog */}
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Query</DialogTitle>
+            <DialogDescription>
+              Enter a new name for this saved query.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRename();
+            }}
+          >
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Query name"
+              autoFocus
+            />
+            <DialogFooter className="mt-4">
+              <Button type="submit" disabled={!renameValue.trim()}>
+                Rename
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// History dropdown
+// ---------------------------------------------------------------------------
+
+function HistoryDropdown({
+  entries,
+  onSelect,
+}: {
+  entries: RestHistoryEntry[];
+  onSelect: (req: { method: string; endpoint: string; body: string }) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" title="History">
+          <ClockIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80">
+        <DropdownMenuLabel>Recent Requests</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {entries.length === 0 ? (
+          <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+            No history yet
+          </div>
+        ) : (
+          <ScrollArea className="max-h-72">
+            <DropdownMenuGroup>
+              {entries.map((entry) => (
+                <DropdownMenuItem
+                  key={entry.id}
+                  onSelect={() => onSelect(entry)}
+                  className="flex items-center gap-2"
+                >
+                  <span className="font-mono text-xs font-semibold w-12 shrink-0">
+                    {entry.method}
+                  </span>
+                  <span className="font-mono text-xs truncate flex-1">
+                    {entry.endpoint}
+                  </span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {formatTimestamp(entry.timestamp)}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </ScrollArea>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Saved queries dropdown
+// ---------------------------------------------------------------------------
+
+function SavedQueriesDropdown({
+  queries,
+  onSelect,
+  onDelete,
+  onRename,
+}: {
+  queries: SavedQuery[];
+  onSelect: (req: { method: string; endpoint: string; body: string }) => void;
+  onDelete: (id: string) => void;
+  onRename: (q: SavedQuery) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" title="Saved queries">
+          <BookmarkIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80">
+        <DropdownMenuLabel>Saved Queries</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {queries.length === 0 ? (
+          <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+            No saved queries
+          </div>
+        ) : (
+          <ScrollArea className="max-h-72">
+            <DropdownMenuGroup>
+              {queries.map((q) => (
+                <DropdownMenuItem
+                  key={q.id}
+                  onSelect={() => onSelect(q)}
+                  className="flex items-center gap-2"
+                >
+                  <span className="font-mono text-xs font-semibold w-12 shrink-0">
+                    {q.method}
+                  </span>
+                  <span className="text-sm truncate flex-1">{q.name}</span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      className="p-0.5 rounded hover:bg-accent"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRename(q);
+                      }}
+                      title="Rename"
+                    >
+                      <PencilIcon className="size-3.5 text-muted-foreground" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-0.5 rounded hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(q.id);
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2Icon className="size-3.5 text-destructive" />
+                    </button>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </ScrollArea>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -381,10 +733,12 @@ function StatusBadge({ status, text }: { status: number; text: string }) {
 
 function EndpointEditor({
   indexNames,
+  initialValue,
   onChange,
   onExecute,
 }: {
   indexNames: string[];
+  initialValue?: string;
   onChange: (value: string) => void;
   onExecute: () => void;
 }) {
@@ -401,7 +755,7 @@ function EndpointEditor({
     const existingDoc = viewRef.current?.state.doc.toString();
 
     const state = EditorState.create({
-      doc: existingDoc ?? "",
+      doc: existingDoc ?? initialValue ?? "",
       extensions: [
         history(),
         keymap.of(historyKeymap),
@@ -448,7 +802,7 @@ function EndpointEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [indexNames]);
+  }, [indexNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -465,11 +819,13 @@ function EndpointEditor({
 function BodyEditor({
   fields,
   endpoint,
+  initialValue,
   onSend,
   onChange,
 }: {
   fields: MappingField[];
   endpoint: string;
+  initialValue?: string;
   onSend: () => void;
   onChange: (value: string) => void;
 }) {
@@ -486,7 +842,7 @@ function BodyEditor({
     const existingDoc = viewRef.current?.state.doc.toString();
 
     const state = EditorState.create({
-      doc: existingDoc ?? "{\n  \n}",
+      doc: existingDoc ?? initialValue ?? "{\n  \n}",
       extensions: [
         history(),
         keymap.of(historyKeymap),
@@ -540,7 +896,7 @@ function BodyEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [fields, endpoint]);
+  }, [fields, endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
