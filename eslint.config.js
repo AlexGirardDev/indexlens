@@ -19,6 +19,20 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Downgrade new React Compiler rules to warnings — the codebase uses
+      // well-established patterns (callback refs, setState in async effects)
+      // that these strict rules flag.
+      'react-hooks/refs': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+    },
+  },
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/purity': 'off',
+    },
   },
   {
     files: ['tests/**/*.ts'],

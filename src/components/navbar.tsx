@@ -32,6 +32,7 @@ interface NavbarProps {
   onLock: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const NAV_ITEMS: { page: Page; label: string; icon: React.ReactNode }[] = [
   { page: "dashboard", label: "Dashboard", icon: <LayoutDashboardIcon className="size-4" /> },
   { page: "indices", label: "Indices", icon: <ListIcon className="size-4" /> },
