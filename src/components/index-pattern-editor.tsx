@@ -8,6 +8,7 @@ import {
 } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult, Completion } from "@codemirror/autocomplete";
 import { history, historyKeymap } from "@codemirror/commands";
+import { vim } from "@replit/codemirror-vim";
 import { cn } from "@/lib/utils";
 import { cmTheme } from "@/lib/codemirror-theme";
 
@@ -44,6 +45,7 @@ interface IndexPatternEditorProps {
   onExecute: () => void;
   onChange: (value: string) => void;
   className?: string;
+  vimMode?: boolean;
 }
 
 export function IndexPatternEditor({
@@ -53,6 +55,7 @@ export function IndexPatternEditor({
   onExecute,
   onChange,
   className,
+  vimMode,
 }: IndexPatternEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -70,6 +73,7 @@ export function IndexPatternEditor({
     const state = EditorState.create({
       doc: existingDoc ?? defaultValue,
       extensions: [
+        ...(vimMode ? [vim()] : []),
         history(),
         keymap.of(historyKeymap),
         cmTheme,
@@ -86,14 +90,21 @@ export function IndexPatternEditor({
               return true;
             },
           },
-          {
-            key: "Enter",
+          ...(vimMode ? [] : [{
+            key: "Enter" as const,
             run: () => {
               onExecuteRef.current();
               return true;
             },
-          },
+          }]),
         ]),
+        ...(vimMode ? [keymap.of([{
+          key: "Ctrl-Enter",
+          run: () => { onExecuteRef.current(); return true; },
+        }, {
+          key: "Mod-Enter",
+          run: () => { onExecuteRef.current(); return true; },
+        }])] : []),
         cmPlaceholder(placeholder),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -115,13 +126,13 @@ export function IndexPatternEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [targets, defaultValue, placeholder]);
+  }, [targets, defaultValue, placeholder, vimMode]);
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "rounded-md border overflow-hidden [&_.cm-editor]:outline-none",
+        "rounded-md border overflow-hidden [&_.cm-editor]:outline-none [&_.cm-panels]:hidden",
         className,
       )}
     />

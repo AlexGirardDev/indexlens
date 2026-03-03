@@ -39,9 +39,11 @@ const CLUSTERS_CREDENTIAL_ID = "cluster_configs";
 interface SettingsPageProps {
   clusters: ClusterConfig[];
   onClustersChange: (clusters: ClusterConfig[]) => Promise<void>;
+  vimMode: boolean;
+  onVimModeChange: (enabled: boolean) => void;
 }
 
-export function SettingsPage({ clusters, onClustersChange }: SettingsPageProps) {
+export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeChange }: SettingsPageProps) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const indexLensFileRef = useRef<HTMLInputElement>(null);
@@ -254,6 +256,27 @@ export function SettingsPage({ clusters, onClustersChange }: SettingsPageProps) 
   return (
     <div className="flex-1 p-6 max-w-2xl mx-auto w-full space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
+
+      {/* Editor Preferences */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Editor</CardTitle>
+          <CardDescription>
+            Global editor preferences. These settings apply across all clusters.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={vimMode}
+              onChange={(e) => onVimModeChange(e.target.checked)}
+              className="size-4 rounded border-input accent-primary"
+            />
+            <span className="text-sm">Enable Vim keybindings</span>
+          </label>
+        </CardContent>
+      </Card>
 
       {/* Export IndexLens Config */}
       <Card>
