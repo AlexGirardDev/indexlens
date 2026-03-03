@@ -39,7 +39,7 @@ function buildHash(
   page: Page,
   indexName?: string | null,
 ): string {
-  if (!clusterId) return "#/";
+  if (!clusterId) return page === "dashboard" ? "#/" : `#//${page}`;
   if (page === "indices" && indexName) {
     return `#/${clusterId}/indices/${encodeURIComponent(indexName)}`;
   }
