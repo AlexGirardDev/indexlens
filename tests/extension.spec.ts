@@ -221,6 +221,40 @@ test.describe("Auto-lock after inactivity", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Lock hotkey (Ctrl+L)
+// ---------------------------------------------------------------------------
+
+test.describe("Lock hotkey", () => {
+  test("Ctrl+L locks the app from unlocked state", async ({ extensionPage }) => {
+    // Complete first-run setup
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const passphraseInput = extensionPage.getByLabel("Passphrase", { exact: true });
+    const confirmInput = extensionPage.getByLabel("Confirm passphrase");
+    const submitButton = extensionPage.getByRole("button", { name: /create passphrase/i });
+
+    await passphraseInput.fill(TEST_PASSPHRASE);
+    await confirmInput.fill(TEST_PASSPHRASE);
+    await submitButton.click();
+
+    // Wait for unlocked state
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Press Ctrl+L to lock the app
+    await extensionPage.keyboard.press("Control+l");
+
+    // Should transition to the lock screen
+    await expect(
+      extensionPage.getByRole("heading", { name: /indexlens is locked/i }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edit cluster configuration
 // ---------------------------------------------------------------------------
 

@@ -78,6 +78,7 @@ xvfb-run npm run test:e2e
 | **First-run setup** | Setup screen appears on first launch; rejects short passphrases; rejects mismatched confirmation; successfully creates passphrase and transitions to unlocked view. |
 | **Unlock and lock lifecycle** | Unlocks with valid passphrase; shows error and stays locked with invalid passphrase. |
 | **Auto-lock after inactivity** | Verifies the session re-locks after the configured idle timeout elapses without user activity. |
+| **Lock hotkey** | Pressing Ctrl+L from the unlocked state transitions to the lock screen. |
 | **Toolbar icon click** | Regression test ensuring clicking the extension icon opens the options page (previously "nothing happens" on click). |
 
 #### Troubleshooting
@@ -124,6 +125,10 @@ IndexLens encrypts all Elasticsearch credentials at rest using a passphrase-deri
 - [ ] Enter the correct passphrase and verify unlock succeeds.
 - [ ] Interact with the page (click, type) and confirm the session stays unlocked beyond the 5-minute timeout window.
 - [ ] Enter an incorrect passphrase and verify an error is shown.
+
+### Lock Hotkey
+- [ ] While unlocked, press Ctrl+L and confirm the app transitions to the lock screen.
+- [ ] Verify the browser does not perform its default action (e.g. focus the address bar) when pressing Ctrl+L.
 
 ### Automatic Re-Lock After Idle
 - [ ] Unlock the extension and leave it idle (no mouse/keyboard activity) for longer than 5 minutes.

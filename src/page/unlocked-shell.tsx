@@ -89,7 +89,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   }, []);
 
   // -----------------------------------------------------------------------
-  // Spotlight: global Ctrl+Space shortcut
+  // Global keyboard shortcuts: Ctrl+Space (Spotlight), Ctrl+L (Lock)
   // -----------------------------------------------------------------------
 
   useEffect(() => {
@@ -97,11 +97,14 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
       if (e.ctrlKey && e.code === "Space") {
         e.preventDefault();
         setSpotlightOpen((prev) => !prev);
+      } else if (e.ctrlKey && e.key === "l") {
+        e.preventDefault();
+        void onLock();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [onLock]);
 
   // -----------------------------------------------------------------------
   // Spotlight: fetch indices + aliases when opened (or cluster changes)
