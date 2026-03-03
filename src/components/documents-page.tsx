@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -314,6 +315,14 @@ export function DocumentsPage({
     });
   }, []);
 
+  const selectAllColumns = useCallback(() => {
+    setHiddenColumns(new Set());
+  }, []);
+
+  const deselectAllColumns = useCallback(() => {
+    setHiddenColumns(new Set(columns));
+  }, [columns]);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages - 1);
   const rangeStart = total === 0 ? 0 : safePage * pageSize + 1;
@@ -382,6 +391,9 @@ export function DocumentsPage({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
               <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={selectAllColumns}>Select all</DropdownMenuItem>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={deselectAllColumns}>Deselect all</DropdownMenuItem>
               <DropdownMenuSeparator />
               {columns.map((col) => (
                 <DropdownMenuCheckboxItem
