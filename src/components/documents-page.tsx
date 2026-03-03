@@ -3,8 +3,11 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns3Icon,
+  Trash2Icon,
+  Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -21,6 +24,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -39,6 +50,8 @@ import type { IndexTarget } from "@/components/index-pattern-editor";
 import { DocumentViewerSheet } from "@/components/document-viewer-sheet";
 import type { MappingField } from "@/lib/es-mapping";
 import type { ClusterConfig } from "@/types/cluster";
+import { toast } from "sonner";
+import { hitKey, buildBulkDeleteBody } from "@/lib/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,7 +129,17 @@ export function DocumentsPage({
   const [patternMatchCount, setPatternMatchCount] = useState<number | null>(null);
   const debouncedPattern = useDebounce(indexPattern, 300);
   const [indexTargets, setIndexTargets] = useState<IndexTarget[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
   const queryTextRef = useRef("");
+
+  // Selection state – keys are hitKey(hit) = `_index\0_id`
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // Clear selection when data, page, query, or target changes
+  useEffect(() => {
+    setSelected(new Set());
+  }, [hits, page, activeQuery, activeTarget]);
 
   // Fetch mapping fields for autocomplete + query compilation
   useEffect(() => {
@@ -261,7 +284,7 @@ export function DocumentsPage({
         if (!signal.aborted) setLoading(false);
       }
     },
-    [cluster, activeTarget, page, pageSize, activeQuery],
+    [cluster, activeTarget, page, pageSize, activeQuery, refreshKey],
   );
 
   useEffect(() => {
@@ -291,7 +314,46 @@ export function DocumentsPage({
   const safePage = Math.min(page, totalPages - 1);
   const rangeStart = total === 0 ? 0 : safePage * pageSize + 1;
   const rangeEnd = Math.min((safePage + 1) * pageSize, total);
-  const colCount = visibleColumns.length + 1;
+  const colCount = visibleColumns.length + 2; // +1 for _id, +1 for checkbox
+
+  // Selection helpers
+  const allPageSelected = hits.length > 0 && hits.every((h) => selected.has(hitKey(h)));
+  const somePageSelected = hits.some((h) => selected.has(hitKey(h)));
+
+  const handleSelectAll = () => {
+    if (allPageSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(hits.map((h) => hitKey(h))));
+    }
+  };
+
+  const handleSelectRow = (hit: SearchHit) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const key = hitKey(hit);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Build a map from hitKey -> hit for quick lookup during delete
+  const hitsByKey = useMemo(() => {
+    const map = new Map<string, SearchHit>();
+    for (const hit of hits) {
+      map.set(hitKey(hit), hit);
+    }
+    return map;
+  }, [hits]);
+
+  const selectedHits = useMemo(
+    () => Array.from(selected).map((k) => hitsByKey.get(k)).filter(Boolean) as SearchHit[],
+    [selected, hitsByKey],
+  );
 
   return (
     <div className="flex flex-col gap-4 p-6 h-full">
@@ -369,6 +431,14 @@ export function DocumentsPage({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <IndeterminateCheckbox
+                  checked={allPageSelected}
+                  indeterminate={somePageSelected && !allPageSelected}
+                  onChange={handleSelectAll}
+                  disabled={hits.length === 0}
+                />
+              </TableHead>
               <TableHead className="min-w-[200px]">_id</TableHead>
               {visibleColumns.map((col) => (
                 <TableHead key={col} className="min-w-[150px]">
@@ -379,7 +449,7 @@ export function DocumentsPage({
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonRows cols={colCount > 1 ? colCount : 5} rows={pageSize} />
+              <SkeletonRows cols={colCount > 1 ? colCount : 6} rows={pageSize} />
             ) : error ? (
               <TableRow>
                 <TableCell
@@ -401,10 +471,19 @@ export function DocumentsPage({
             ) : (
               hits.map((hit) => (
                 <TableRow
-                  key={hit._id}
+                  key={hitKey(hit)}
                   className="cursor-pointer"
+                  data-state={selected.has(hitKey(hit)) ? "selected" : undefined}
                   onClick={() => setSelectedHit(hit)}
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(hitKey(hit))}
+                      onChange={() => handleSelectRow(hit)}
+                      className="size-4 rounded border-input accent-primary"
+                    />
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {hit._id}
                   </TableCell>
@@ -493,11 +572,191 @@ export function DocumentsPage({
         </div>
       )}
 
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="sticky bottom-0 flex items-center justify-between gap-4 rounded-lg border bg-popover px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium">
+              {selected.size} {selected.size === 1 ? "document" : "documents"} selected
+            </span>
+            <Button variant="link" size="sm" onClick={() => setSelected(new Set())} className="h-auto p-0 text-xs">
+              Clear selection
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive border-destructive/50 hover:bg-destructive/10"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2Icon className="size-4 mr-1" />
+              Delete Documents
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete confirmation dialog */}
+      <BulkDeleteDocumentsDialog
+        open={deleteDialogOpen}
+        hits={selectedHits}
+        cluster={cluster}
+        onClose={() => setDeleteDialogOpen(false)}
+        onSuccess={() => {
+          setDeleteDialogOpen(false);
+          setSelected(new Set());
+          setRefreshKey((k) => k + 1);
+        }}
+      />
+
       <DocumentViewerSheet
         hit={selectedHit}
         onClose={() => setSelectedHit(null)}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Indeterminate checkbox
+// ---------------------------------------------------------------------------
+
+function IndeterminateCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      disabled={disabled}
+      className="size-4 rounded border-input accent-primary"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bulk delete documents dialog
+// ---------------------------------------------------------------------------
+
+function BulkDeleteDocumentsDialog({
+  open,
+  hits,
+  cluster,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean;
+  hits: SearchHit[];
+  cluster: ClusterConfig;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const requiredText = "delete";
+  const confirmed = confirmation === requiredText;
+
+  // Reset confirmation when dialog opens/closes
+  useEffect(() => {
+    if (open) setConfirmation("");
+  }, [open]);
+
+  const handleDelete = async () => {
+    if (!confirmed || hits.length === 0) return;
+    setSubmitting(true);
+    try {
+      const body = buildBulkDeleteBody(hits);
+
+      const result = await esRequest<{ errors: boolean; items: Array<{ delete: { _id: string; status: number; error?: unknown } }> }>(
+        cluster,
+        "/_bulk",
+        {
+          method: "POST",
+          body,
+        },
+      );
+
+      if (result.errors) {
+        const failedCount = result.items.filter((item) => item.delete.status >= 400).length;
+        toast.error(`${failedCount} of ${hits.length} documents failed to delete`);
+      } else {
+        toast.success(
+          hits.length === 1
+            ? "Deleted 1 document"
+            : `Deleted ${hits.length} documents`,
+        );
+      }
+      onSuccess();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete documents",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete Documents</DialogTitle>
+          <DialogDescription>
+            This will delete {hits.length}{" "}
+            {hits.length === 1 ? "document" : "documents"}. This action cannot
+            be undone.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div>
+          <label className="text-sm font-medium">
+            Type{" "}
+            <span className="font-mono text-destructive">{requiredText}</span>{" "}
+            to confirm
+          </label>
+          <Input
+            className="mt-1"
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            placeholder={requiredText}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={!confirmed || submitting}
+          >
+            {submitting && <Loader2Icon className="size-4 mr-1 animate-spin" />}
+            Delete Documents
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
