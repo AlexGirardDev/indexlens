@@ -75,6 +75,14 @@ def _rounded_rect_mask(x: float, y: float, s: float, r: float) -> bool:
     return False
 
 
+def _angle_in_range(angle: float, start: float, width: float) -> bool:
+    """Check if *angle* (0-360) lies within an arc starting at *start* with given *width* degrees."""
+    end = start + width
+    if end > 360:
+        return angle >= start or angle <= end - 360
+    return start <= angle <= end
+
+
 def _draw_icon(size: int) -> list[tuple[int, int, int, int]]:
     px = [(0, 0, 0, 0)] * (size * size)
 
@@ -94,81 +102,50 @@ def _draw_icon(size: int) -> list[tuple[int, int, int, int]]:
                 r, g, b = _gradient(bg0, bg1, t)
                 set_pixel(x, y, (r, g, b, 255))
 
-    # Database cylinder.
+    # Shutter aperture parameters.
     cx = size * 0.5
-    top_y = size * 0.30
-    bottom_y = size * 0.62
-    rx_db = size * 0.19
-    ry_db = size * 0.06
-    left = int(cx - rx_db)
-    right = int(cx + rx_db)
-    body_top = int(top_y)
-    body_bottom = int(bottom_y)
+    cy = size * 0.5
+    r_outer = size * 0.39       # blade outer radius
+    r_inner = size * 0.11       # blade inner radius (center opening)
+    blade_w_deg = 75.0          # angular width of each blade (degrees)
+    twist_deg = 15.0            # angular offset from outer to inner edge
+    blade_color = (79, 121, 166)  # #4F79A6
+    rim_color = (17, 58, 95)      # #113A5F
 
-    for y in range(body_top, body_bottom):
-        t = (y - body_top) / max(1, body_bottom - body_top)
-        r, g, b = _gradient((79, 121, 166), (45, 79, 115), t)
-        for x in range(left, right + 1):
-            set_pixel(x, y, (r, g, b, 255))
-
+    # Draw 6 shutter blades.
     for y in range(size):
         for x in range(size):
-            top_eq = ((x - cx) / rx_db) ** 2 + ((y - top_y) / ry_db) ** 2
-            if top_eq <= 1.0:
-                set_pixel(x, y, (94, 138, 184, 255))
+            dx = x - cx
+            dy = y - cy
+            d = math.hypot(dx, dy)
+            if d < r_inner or d > r_outer:
+                continue
+            angle = math.degrees(math.atan2(dy, dx)) % 360
+            # Interpolate twist: full twist at inner edge, zero at outer edge.
+            t = (d - r_inner) / max(0.001, r_outer - r_inner)
+            for i in range(6):
+                start = (i * 60.0 + twist_deg * (1.0 - t)) % 360
+                if _angle_in_range(angle, start, blade_w_deg):
+                    alpha = 255 if i % 2 == 0 else 217
+                    set_pixel(x, y, (blade_color[0], blade_color[1], blade_color[2], alpha))
+                    break
 
-            bot_eq = ((x - cx) / rx_db) ** 2 + ((y - bottom_y) / ry_db) ** 2
-            if bot_eq <= 1.0:
-                set_pixel(x, y, (44, 78, 114, 255))
-
-    stripe_ys = (size * 0.39, size * 0.47, size * 0.55)
-    stripe_alpha = (180, 130, 95)
-    for sy, alpha in zip(stripe_ys, stripe_alpha):
-        for y in range(size):
-            for x in range(size):
-                eq = ((x - cx) / (rx_db * 0.72)) ** 2 + ((y - sy) / (ry_db * 0.60)) ** 2
-                if eq <= 1.0:
-                    set_pixel(x, y, (122, 166, 212, alpha))
-
-    # Magnifying glass lens + rim.
-    lens_cx = size * 0.63
-    lens_cy = size * 0.49
-    lens_r = size * 0.155
-    rim = max(2, round(size * 0.038))
-
+    # Outer rim circle.
+    rim_r = size * 0.40
+    rim_w = max(1.0, size * 0.03)
     for y in range(size):
         for x in range(size):
-            d = math.hypot(x - lens_cx, y - lens_cy)
-            if d <= lens_r:
-                t = min(1.0, d / lens_r)
-                r, g, b = _gradient((209, 242, 255), (123, 199, 232), t)
-                set_pixel(x, y, (r, g, b, 200))
-            if lens_r - rim <= d <= lens_r:
-                set_pixel(x, y, (17, 58, 95, 255))
+            d = math.hypot(x - cx, y - cy)
+            if abs(d - rim_r) <= rim_w * 0.5:
+                set_pixel(x, y, (rim_color[0], rim_color[1], rim_color[2], 255))
 
-    # Handle (thick stroked segment).
-    x1, y1 = size * 0.72, size * 0.60
-    x2, y2 = size * 0.84, size * 0.72
-    half_w = max(1.5, size * 0.025)
-    vx, vy = x2 - x1, y2 - y1
-    seg_len_sq = vx * vx + vy * vy
-
+    # Center opening outline.
+    center_w = max(1.0, size * 0.012)
     for y in range(size):
         for x in range(size):
-            wx, wy = x - x1, y - y1
-            t = 0.0 if seg_len_sq == 0 else max(0.0, min(1.0, (wx * vx + wy * vy) / seg_len_sq))
-            px_line = x1 + t * vx
-            py_line = y1 + t * vy
-            if math.hypot(x - px_line, y - py_line) <= half_w:
-                set_pixel(x, y, (17, 58, 95, 255))
-
-    # Highlight dot in lens.
-    hi_cx, hi_cy = size * 0.58, size * 0.44
-    hi_r = max(1.0, size * 0.02)
-    for y in range(size):
-        for x in range(size):
-            if math.hypot(x - hi_cx, y - hi_cy) <= hi_r:
-                set_pixel(x, y, (255, 255, 255, 180))
+            d = math.hypot(x - cx, y - cy)
+            if abs(d - r_inner) <= center_w * 0.5:
+                set_pixel(x, y, (rim_color[0], rim_color[1], rim_color[2], 255))
 
     return px
 
