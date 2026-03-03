@@ -6,10 +6,13 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 
 - **Spotlight search** — Press `Ctrl+Space` to open a spotlight-style command palette. Search across pages, indices, aliases, and saved queries instantly.
 - **Keyboard-driven navigation** — Cycle between Dashboard, Indices, REST Console, and Settings pages with `Shift+T`. Lock the session with `Ctrl+L`.
-- **REST Console with intelligent autocomplete** — A full-featured REST client with endpoint autocomplete (index names, ES operations), request body autocomplete (Elasticsearch DSL keywords and field names from index mappings), request history, and saved queries.
-- **Index & document browser** — View all indices in a cluster, drill into an index to browse its documents, view field mappings, and search with custom queries.
+- **REST Console with intelligent autocomplete** — A full-featured REST client with endpoint autocomplete (index names, ES operations), request body autocomplete (Elasticsearch DSL keywords and field names from index mappings), request history, and saved queries. CodeMirror editors include auto-indentation, bracket matching, and close-bracket completion.
+- **Index & document browser** — View all indices in a cluster, drill into an index to browse its documents, view field mappings, and search with custom queries. The column visibility dropdown includes Select All / Deselect All buttons for quick toggling.
 - **Encrypted credential vault** — Cluster configurations and credentials are encrypted at rest using AES-256-GCM with a passphrase-derived key. Your passphrase is never stored. See [Security Model](#security-model) for details.
 - **Idle auto-lock** — The session automatically locks after 5 minutes of inactivity, wiping the derived key from memory.
+- **Vim mode** — All CodeMirror editors (REST console endpoint/body, document query editor, index pattern editor) support optional vim keybindings. Toggle vim mode from the checkbox above the REST console or from the Settings page. The setting persists globally across sessions.
+- **Smart HTTP method selection** — The REST console automatically selects the appropriate HTTP method (GET or POST) based on the endpoint action. For example, `_search` auto-selects POST while `_cat/indices` auto-selects GET.
+- **Dynamic browser tab title** — The browser tab title updates dynamically to show "IndexLens | &lt;cluster name&gt;" based on the active cluster.
 - **Settings & config import/export** — Export your full IndexLens configuration (clusters and saved queries) as an encrypted JSON file using an export passphrase, and re-import it later with that same passphrase. Migrate from Elasticvue by importing its backup file — cluster connections and saved queries are mapped automatically. Duplicate clusters and queries are detected and skipped during import.
 
 ## Screenshots
@@ -88,6 +91,7 @@ npm run dev
 | `Enter` | Execute request (endpoint editor) | REST Console endpoint field |
 | `Ctrl+Enter` | Execute request (body editor) | REST Console body editor |
 | `Tab` | Accept or trigger autocomplete | REST Console editors |
+| `Tab` | Move focus from endpoint editor to body editor | REST Console endpoint field (when endpoint has a terminal action) |
 
 ## Security Model
 
@@ -177,9 +181,13 @@ src/
     unlocked-shell.tsx  - Unlocked application shell
   lib/
     config-transfer.ts  - Import/export logic for IndexLens and Elasticvue configs
+    es-endpoint-method.ts - Smart HTTP method inference from endpoint path
+    global-settings.ts  - Global UI settings (vim mode) persisted in localStorage
   components/
     spotlight-search.tsx - Spotlight command palette (Ctrl+Space)
     rest-page.tsx        - REST console with autocomplete and history
+    query-editor.tsx     - Reusable CodeMirror query editor with vim support
+    index-pattern-editor.tsx - Index pattern autocomplete editor
     indices-page.tsx     - Index browser
     documents-page.tsx   - Document viewer
     dashboard-page.tsx   - Cluster dashboard
