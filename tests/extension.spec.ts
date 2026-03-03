@@ -819,3 +819,115 @@ test.describe("Spotlight command mode", () => {
     await extensionPage.keyboard.press("Escape");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ctrl+Space spotlight hotkey in Vim normal mode
+// ---------------------------------------------------------------------------
+
+test.describe("Spotlight hotkey with Vim mode", () => {
+  test.beforeEach(async ({ extensionPage }) => {
+    // Mock ES requests
+    await extensionPage.route("http://127.0.0.1:9200/**", async (route) => {
+      const url = route.request().url();
+      if (url.includes("/_cat/indices")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([{ index: "test-index" }]),
+        });
+      } else if (url.includes("/_cat/aliases")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "{}",
+        });
+      }
+    });
+
+    // First-run setup
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await extensionPage.getByLabel("Passphrase", { exact: true }).fill(TEST_PASSPHRASE);
+    await extensionPage.getByLabel("Confirm passphrase").fill(TEST_PASSPHRASE);
+    await extensionPage.getByRole("button", { name: /create passphrase/i }).click();
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Add a cluster
+    await extensionPage.getByRole("button", { name: /clusters/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+    await extensionPage.getByLabel("Name").fill("Vim Test Cluster");
+    await extensionPage.getByLabel("URL").fill("http://127.0.0.1:9200");
+    await extensionPage.getByRole("button", { name: /^add cluster$/i }).click();
+    await expect(
+      extensionPage.getByRole("button", { name: /vim test cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Navigate to REST page
+    await extensionPage.getByRole("button", { name: /^rest$/i }).click();
+  });
+
+  test("Ctrl+Space opens spotlight when CodeMirror Vim is in normal mode", async ({ extensionPage }) => {
+    // Enable Vim mode via the checkbox on the REST page
+    const vimCheckbox = extensionPage.locator("label").filter({ hasText: "Vim mode" }).locator("input[type='checkbox']");
+    await vimCheckbox.check();
+
+    // Focus the endpoint editor (first .cm-editor) and enter some text
+    const endpointEditor = extensionPage.locator(".cm-editor").first();
+    await endpointEditor.click();
+    await extensionPage.keyboard.type("i/test");
+
+    // Press Escape to return to Vim normal mode
+    await extensionPage.keyboard.press("Escape");
+
+    // Verify we are in normal mode by checking the Vim status bar
+    await expect(extensionPage.getByText("NORMAL")).toBeVisible({ timeout: 3_000 });
+
+    // Press Ctrl+Space — this should open spotlight despite Vim normal mode
+    await extensionPage.keyboard.press("Control+Space");
+
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Close spotlight
+    await extensionPage.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+  });
+
+  test("Ctrl+Space opens spotlight from Vim normal mode in body editor", async ({ extensionPage }) => {
+    // Enable Vim mode
+    const vimCheckbox = extensionPage.locator("label").filter({ hasText: "Vim mode" }).locator("input[type='checkbox']");
+    await vimCheckbox.check();
+
+    // Switch to POST so body editor is visible
+    await extensionPage.getByRole("combobox").click();
+    await extensionPage.getByRole("option", { name: /^POST$/ }).click();
+
+    // Focus the body editor (second .cm-editor)
+    const bodyEditor = extensionPage.locator(".cm-editor").nth(1);
+    await bodyEditor.click();
+
+    // Press Escape to ensure Vim normal mode
+    await extensionPage.keyboard.press("Escape");
+
+    await expect(extensionPage.getByText("NORMAL")).toBeVisible({ timeout: 3_000 });
+
+    // Press Ctrl+Space — should open spotlight
+    await extensionPage.keyboard.press("Control+Space");
+
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Close and reopen to verify toggle behavior
+    await extensionPage.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+  });
+});
