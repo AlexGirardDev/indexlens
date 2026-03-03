@@ -5,11 +5,12 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 ## Features
 
 - **Spotlight search** — Press `Ctrl+Space` to open a spotlight-style command palette. Search across pages, indices, aliases, and saved queries instantly.
-- **Keyboard-driven navigation** — Cycle between Dashboard, Indices, and REST Console pages with `Shift+T`. Lock the session with `Ctrl+L`.
+- **Keyboard-driven navigation** — Cycle between Dashboard, Indices, REST Console, and Settings pages with `Shift+T`. Lock the session with `Ctrl+L`.
 - **REST Console with intelligent autocomplete** — A full-featured REST client with endpoint autocomplete (index names, ES operations), request body autocomplete (Elasticsearch DSL keywords and field names from index mappings), request history, and saved queries.
 - **Index & document browser** — View all indices in a cluster, drill into an index to browse its documents, view field mappings, and search with custom queries.
 - **Encrypted credential vault** — Cluster configurations and credentials are encrypted at rest using AES-256-GCM with a passphrase-derived key. Your passphrase is never stored. See [Security Model](#security-model) for details.
 - **Idle auto-lock** — The session automatically locks after 5 minutes of inactivity, wiping the derived key from memory.
+- **Settings & config import/export** — Export your full IndexLens configuration (clusters and saved queries) as a JSON file, and re-import it later. Migrate from Elasticvue by importing its backup file — cluster connections and saved queries are mapped automatically. Duplicate clusters and queries are detected and skipped during import.
 
 ## Screenshots
 
@@ -74,7 +75,7 @@ npm run dev
 |---|---|---|
 | `Ctrl+Space` | Toggle spotlight search | Anywhere while unlocked |
 | `Ctrl+L` | Lock the session | Anywhere while unlocked |
-| `Shift+T` | Cycle to the next page (Dashboard / Indices / REST) | When focus is not in a text input |
+| `Shift+T` | Cycle to the next page (Dashboard / Indices / REST / Settings) | When focus is not in a text input |
 | `Enter` | Execute request (endpoint editor) | REST Console endpoint field |
 | `Ctrl+Enter` | Execute request (body editor) | REST Console body editor |
 | `Tab` | Accept or trigger autocomplete | REST Console editors |
@@ -165,12 +166,15 @@ src/
     setup-screen.tsx    - First-run passphrase creation UI
     lock-screen.tsx     - Locked passphrase entry UI
     unlocked-shell.tsx  - Unlocked application shell
+  lib/
+    config-transfer.ts  - Import/export logic for IndexLens and Elasticvue configs
   components/
     spotlight-search.tsx - Spotlight command palette (Ctrl+Space)
     rest-page.tsx        - REST console with autocomplete and history
     indices-page.tsx     - Index browser
     documents-page.tsx   - Document viewer
     dashboard-page.tsx   - Cluster dashboard
+    settings-page.tsx    - Settings: config export, import, Elasticvue migration
     navbar.tsx           - Navigation bar
   App.tsx           - Root component routing between lock states
   main.tsx          - React entry point

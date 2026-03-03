@@ -43,6 +43,7 @@ const NAV_PAGES: { page: Page; label: string }[] = [
   { page: "dashboard", label: "Dashboard" },
   { page: "indices", label: "Indices" },
   { page: "rest", label: "Rest" },
+  { page: "settings", label: "Settings" },
 ];
 
 export function buildNavItems(): SpotlightNavItem[] {

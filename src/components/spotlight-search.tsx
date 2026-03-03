@@ -2,6 +2,7 @@ import {
   LayoutDashboardIcon,
   ListIcon,
   TerminalIcon,
+  SettingsIcon,
   DatabaseIcon,
   BookmarkIcon,
 } from "lucide-react";
@@ -45,6 +46,7 @@ const NAV_ITEMS: { page: Page; label: string; icon: React.ReactNode; shortcut?: 
   { page: "dashboard", label: "Dashboard", icon: <LayoutDashboardIcon className="size-4" />, shortcut: "D" },
   { page: "indices", label: "Indices", icon: <ListIcon className="size-4" />, shortcut: "I" },
   { page: "rest", label: "Rest", icon: <TerminalIcon className="size-4" />, shortcut: "R" },
+  { page: "settings", label: "Settings", icon: <SettingsIcon className="size-4" />, shortcut: "S" },
 ];
 
 // ---------------------------------------------------------------------------

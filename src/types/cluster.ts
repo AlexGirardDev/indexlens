@@ -30,7 +30,7 @@ export interface ClusterConfig {
   color: string;
 }
 
-export type Page = "dashboard" | "indices" | "rest";
+export type Page = "dashboard" | "indices" | "rest" | "settings";
 
 export const AUTH_TYPE_LABELS: Record<AuthType, string> = {
   none: "No authentication",

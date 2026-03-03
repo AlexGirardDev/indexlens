@@ -31,10 +31,10 @@ function makeSavedQuery(overrides?: Partial<SavedQuery>): SavedQuery {
 // ---------------------------------------------------------------------------
 
 describe("buildNavItems", () => {
-  it("returns the three navigation pages", () => {
+  it("returns the four navigation pages", () => {
     const items = buildNavItems();
-    expect(items).toHaveLength(3);
-    expect(items.map((i) => i.page)).toEqual(["dashboard", "indices", "rest"]);
+    expect(items).toHaveLength(4);
+    expect(items.map((i) => i.page)).toEqual(["dashboard", "indices", "rest", "settings"]);
     expect(items.every((i) => i.type === "nav")).toBe(true);
   });
 });
@@ -172,6 +172,15 @@ describe("filterSpotlightItems", () => {
     const result = filterSpotlightItems(allItems, "LOGS");
     // Should match index "logs-2024", alias "current-logs", and saved query "Search Logs" / endpoint "/logs-2024/_search"
     expect(result.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("filters settings nav item by label", () => {
+    const result = filterSpotlightItems(allItems, "settings");
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("nav");
+    if (result[0].type === "nav") {
+      expect(result[0].page).toBe("settings");
+    }
   });
 
   it("returns empty when nothing matches", () => {
