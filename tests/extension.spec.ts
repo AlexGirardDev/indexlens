@@ -625,3 +625,197 @@ test.describe("Toolbar icon click", () => {
     expect(context.pages().length).toBeGreaterThan(pagesBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spotlight command mode
+// ---------------------------------------------------------------------------
+
+test.describe("Spotlight command mode", () => {
+  test.beforeEach(async ({ extensionPage }) => {
+    // Mock all ES requests to avoid real cluster connections
+    await extensionPage.route("http://127.0.0.1:9200/**", async (route) => {
+      const url = route.request().url();
+      if (url.includes("/_cat/indices")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([{ index: "test-index" }]),
+        });
+      } else if (url.includes("/_cat/aliases")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "{}",
+        });
+      }
+    });
+
+    await extensionPage.route("http://127.0.0.1:9201/**", async (route) => {
+      const url = route.request().url();
+      if (url.includes("/_cat/indices")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([{ index: "other-index" }]),
+        });
+      } else if (url.includes("/_cat/aliases")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "{}",
+        });
+      }
+    });
+
+    // First-run setup
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await extensionPage.getByLabel("Passphrase", { exact: true }).fill(TEST_PASSPHRASE);
+    await extensionPage.getByLabel("Confirm passphrase").fill(TEST_PASSPHRASE);
+    await extensionPage.getByRole("button", { name: /create passphrase/i }).click();
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Add first cluster
+    await extensionPage.getByRole("button", { name: /clusters/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+    await extensionPage.getByLabel("Name").fill("Cluster Alpha");
+    await extensionPage.getByLabel("URL").fill("http://127.0.0.1:9200");
+    await extensionPage.getByRole("button", { name: /^add cluster$/i }).click();
+    await expect(
+      extensionPage.getByRole("button", { name: /cluster alpha/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Add second cluster
+    await extensionPage.getByRole("button", { name: /cluster alpha/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+    await extensionPage.getByLabel("Name").fill("Cluster Beta");
+    await extensionPage.getByLabel("URL").fill("http://127.0.0.1:9201");
+    await extensionPage.getByRole("button", { name: /^add cluster$/i }).click();
+  });
+
+  test("clusters are not shown in default spotlight results", async ({ extensionPage }) => {
+    await extensionPage.keyboard.press("Control+Space");
+
+    // Spotlight should be open
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Navigation items should be visible
+    await expect(dialog.getByText("Navigation")).toBeVisible();
+
+    // Clusters should NOT appear in default results
+    await expect(dialog.getByText("Cluster Beta")).not.toBeVisible();
+
+    // Close spotlight
+    await extensionPage.keyboard.press("Escape");
+  });
+
+  test("typing > shows command list with Select Cluster", async ({ extensionPage }) => {
+    await extensionPage.keyboard.press("Control+Space");
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Type '>' to enter command mode
+    await extensionPage.keyboard.type(">");
+
+    // Should show Commands group with Select Cluster
+    await expect(dialog.getByText("Commands")).toBeVisible();
+    await expect(dialog.getByText("Select Cluster")).toBeVisible();
+
+    // Navigation should NOT be shown in command mode
+    await expect(dialog.getByText("Navigation")).not.toBeVisible();
+
+    await extensionPage.keyboard.press("Escape");
+  });
+
+  test("selecting Select Cluster command shows cluster list and selecting a cluster switches to it", async ({ extensionPage }) => {
+    await extensionPage.keyboard.press("Control+Space");
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Type '>' and select the Select Cluster command
+    await extensionPage.keyboard.type(">");
+    await expect(dialog.getByText("Select Cluster")).toBeVisible();
+    await extensionPage.keyboard.press("Enter");
+
+    // Input should now read "> Select Cluster "
+    const input = dialog.locator("[cmdk-input]");
+    await expect(input).toHaveValue("> Select Cluster ");
+
+    // Should show the non-active cluster (Cluster Beta since Alpha is active)
+    // The "Select Cluster" heading is the group heading now
+    await expect(dialog.getByText("Cluster Beta")).toBeVisible({ timeout: 5_000 });
+
+    // Select the cluster
+    await extensionPage.keyboard.press("Enter");
+
+    // Spotlight should close
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+
+    // Cluster Beta should now be active in the navbar
+    await expect(
+      extensionPage.getByRole("button", { name: /cluster beta/i }),
+    ).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("deleting back to > returns to command list", async ({ extensionPage }) => {
+    await extensionPage.keyboard.press("Control+Space");
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Enter command mode and select Select Cluster
+    await extensionPage.keyboard.type(">");
+    await extensionPage.keyboard.press("Enter");
+
+    // Should be in active command mode
+    const input = dialog.locator("[cmdk-input]");
+    await expect(input).toHaveValue("> Select Cluster ");
+
+    // Delete everything after '> ' to go back to command list
+    // Select all and retype just '>'
+    await extensionPage.keyboard.press("Control+a");
+    await extensionPage.keyboard.type("> ");
+
+    // Should show command list again
+    await expect(dialog.getByText("Commands")).toBeVisible();
+    await expect(dialog.getByText("Cluster Beta")).not.toBeVisible();
+
+    await extensionPage.keyboard.press("Escape");
+  });
+
+  test("removing > exits command mode back to normal results", async ({ extensionPage }) => {
+    await extensionPage.keyboard.press("Control+Space");
+    const dialog = extensionPage.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Enter command mode
+    await extensionPage.keyboard.type(">");
+    await expect(dialog.getByText("Commands")).toBeVisible();
+
+    // Clear input to exit command mode
+    await extensionPage.keyboard.press("Control+a");
+    await extensionPage.keyboard.type("dash");
+
+    // Should show normal search results
+    await expect(dialog.getByText("Navigation")).toBeVisible();
+    await expect(dialog.getByText("Dashboard")).toBeVisible();
+    await expect(dialog.getByText("Commands")).not.toBeVisible();
+
+    await extensionPage.keyboard.press("Escape");
+  });
+});

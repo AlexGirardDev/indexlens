@@ -6,6 +6,10 @@ import {
   buildClusterItems,
   resolveRestPreload,
   filterSpotlightItems,
+  parseSpotlightInput,
+  filterCommands,
+  buildCommandInputValue,
+  SPOTLIGHT_COMMANDS,
 } from "./spotlight-helpers";
 import type { SpotlightItem } from "./spotlight-helpers";
 import type { SavedQuery } from "./rest-query-storage";
@@ -252,5 +256,121 @@ describe("filterSpotlightItems", () => {
   it("returns empty when nothing matches", () => {
     const result = filterSpotlightItems(allItems, "zzz-nonexistent");
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseSpotlightInput
+// ---------------------------------------------------------------------------
+
+describe("parseSpotlightInput", () => {
+  it("returns search mode for normal text", () => {
+    const state = parseSpotlightInput("dashboard");
+    expect(state).toEqual({ mode: "search", search: "dashboard" });
+  });
+
+  it("returns search mode for empty string", () => {
+    const state = parseSpotlightInput("");
+    expect(state).toEqual({ mode: "search", search: "" });
+  });
+
+  it("returns command-list mode for just '>'", () => {
+    const state = parseSpotlightInput(">");
+    expect(state).toEqual({ mode: "command-list", filter: "" });
+  });
+
+  it("returns command-list mode for '> ' (with space)", () => {
+    const state = parseSpotlightInput("> ");
+    expect(state).toEqual({ mode: "command-list", filter: "" });
+  });
+
+  it("returns command-list mode with filter for partial command text", () => {
+    const state = parseSpotlightInput("> Sel");
+    expect(state).toEqual({ mode: "command-list", filter: "Sel" });
+  });
+
+  it("returns command-list mode for unrecognized command text", () => {
+    const state = parseSpotlightInput("> Unknown Command");
+    expect(state).toEqual({ mode: "command-list", filter: "Unknown Command" });
+  });
+
+  it("returns command-active mode for '> Select Cluster'", () => {
+    const state = parseSpotlightInput("> Select Cluster");
+    expect(state).toEqual({
+      mode: "command-active",
+      command: SPOTLIGHT_COMMANDS[0],
+      filter: "",
+    });
+  });
+
+  it("returns command-active mode for '> Select Cluster ' (with trailing space)", () => {
+    const state = parseSpotlightInput("> Select Cluster ");
+    expect(state).toEqual({
+      mode: "command-active",
+      command: SPOTLIGHT_COMMANDS[0],
+      filter: "",
+    });
+  });
+
+  it("returns command-active mode with filter for '> Select Cluster prod'", () => {
+    const state = parseSpotlightInput("> Select Cluster prod");
+    expect(state).toEqual({
+      mode: "command-active",
+      command: SPOTLIGHT_COMMANDS[0],
+      filter: "prod",
+    });
+  });
+
+  it("is case-insensitive for command matching", () => {
+    const state = parseSpotlightInput("> select cluster");
+    expect(state.mode).toBe("command-active");
+  });
+
+  it("handles leading whitespace before '>'", () => {
+    const state = parseSpotlightInput("  > ");
+    expect(state).toEqual({ mode: "command-list", filter: "" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterCommands
+// ---------------------------------------------------------------------------
+
+describe("filterCommands", () => {
+  it("returns all commands when filter is empty", () => {
+    const result = filterCommands(SPOTLIGHT_COMMANDS, "");
+    expect(result).toEqual(SPOTLIGHT_COMMANDS);
+  });
+
+  it("filters commands by label substring", () => {
+    const result = filterCommands(SPOTLIGHT_COMMANDS, "cluster");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("select-cluster");
+  });
+
+  it("is case-insensitive", () => {
+    const result = filterCommands(SPOTLIGHT_COMMANDS, "SELECT");
+    expect(result).toHaveLength(1);
+  });
+
+  it("returns empty when nothing matches", () => {
+    const result = filterCommands(SPOTLIGHT_COMMANDS, "zzz");
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCommandInputValue
+// ---------------------------------------------------------------------------
+
+describe("buildCommandInputValue", () => {
+  it("builds '> Select Cluster ' for the Select Cluster command", () => {
+    const value = buildCommandInputValue(SPOTLIGHT_COMMANDS[0]);
+    expect(value).toBe("> Select Cluster ");
+  });
+
+  it("ends with a trailing space", () => {
+    const value = buildCommandInputValue({ id: "test", label: "Test" });
+    expect(value.endsWith(" ")).toBe(true);
   });
 });
