@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { hitKey, buildBulkDeleteBody } from "./document-helpers";
+import {
+  hitKey,
+  buildBulkDeleteBody,
+  resolveSortField,
+  buildEsSortClause,
+  type SortState,
+} from "./document-helpers";
+import type { MappingField } from "./es-mapping";
 
 // ---------------------------------------------------------------------------
 // hitKey
@@ -78,5 +85,103 @@ describe("buildBulkDeleteBody", () => {
   it("returns a single trailing newline for empty input", () => {
     const body = buildBulkDeleteBody([]);
     expect(body).toBe("\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveSortField
+// ---------------------------------------------------------------------------
+
+describe("resolveSortField", () => {
+  const fields: MappingField[] = [
+    { path: "name", type: "text", isSubfield: false },
+    { path: "name.keyword", type: "keyword", isSubfield: true },
+    { path: "age", type: "integer", isSubfield: false },
+    { path: "bio", type: "text", isSubfield: false },
+    { path: "created_at", type: "date", isSubfield: false },
+    { path: "tags", type: "text", isSubfield: false },
+    { path: "tags.raw", type: "keyword", isSubfield: true },
+  ];
+
+  it("returns '_id' for the _id field", () => {
+    expect(resolveSortField("_id", fields)).toBe("_id");
+  });
+
+  it("returns the field path directly for non-text types", () => {
+    expect(resolveSortField("age", fields)).toBe("age");
+    expect(resolveSortField("created_at", fields)).toBe("created_at");
+  });
+
+  it("resolves text field to .keyword sub-field when available", () => {
+    expect(resolveSortField("name", fields)).toBe("name.keyword");
+  });
+
+  it("resolves text field to .raw sub-field when .keyword is absent", () => {
+    expect(resolveSortField("tags", fields)).toBe("tags.raw");
+  });
+
+  it("returns null for text field with no sortable sub-field", () => {
+    expect(resolveSortField("bio", fields)).toBeNull();
+  });
+
+  it("returns field as-is when not found in mappings (multi-index fallback)", () => {
+    expect(resolveSortField("unknown_field", fields)).toBe("unknown_field");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildEsSortClause
+// ---------------------------------------------------------------------------
+
+describe("buildEsSortClause", () => {
+  const fields: MappingField[] = [
+    { path: "name", type: "text", isSubfield: false },
+    { path: "name.keyword", type: "keyword", isSubfield: true },
+    { path: "age", type: "integer", isSubfield: false },
+    { path: "bio", type: "text", isSubfield: false },
+  ];
+
+  it("returns undefined when sort is null", () => {
+    expect(buildEsSortClause(null, fields)).toBeUndefined();
+  });
+
+  it("returns a sort array for _id ascending", () => {
+    const sort: SortState = { field: "_id", dir: "asc" };
+    expect(buildEsSortClause(sort, fields)).toEqual([
+      { _id: { order: "asc" } },
+    ]);
+  });
+
+  it("returns a sort array for _id descending", () => {
+    const sort: SortState = { field: "_id", dir: "desc" };
+    expect(buildEsSortClause(sort, fields)).toEqual([
+      { _id: { order: "desc" } },
+    ]);
+  });
+
+  it("builds sort with unmapped_type for a numeric field", () => {
+    const sort: SortState = { field: "age", dir: "desc" };
+    expect(buildEsSortClause(sort, fields)).toEqual([
+      { age: { order: "desc", unmapped_type: "keyword" } },
+    ]);
+  });
+
+  it("resolves text field to .keyword sub-field in sort clause", () => {
+    const sort: SortState = { field: "name", dir: "asc" };
+    expect(buildEsSortClause(sort, fields)).toEqual([
+      { "name.keyword": { order: "asc", unmapped_type: "keyword" } },
+    ]);
+  });
+
+  it("returns undefined when text field has no sortable sub-field", () => {
+    const sort: SortState = { field: "bio", dir: "asc" };
+    expect(buildEsSortClause(sort, fields)).toBeUndefined();
+  });
+
+  it("sorts unknown fields with unmapped_type fallback", () => {
+    const sort: SortState = { field: "unknown", dir: "asc" };
+    expect(buildEsSortClause(sort, fields)).toEqual([
+      { unknown: { order: "asc", unmapped_type: "keyword" } },
+    ]);
   });
 });

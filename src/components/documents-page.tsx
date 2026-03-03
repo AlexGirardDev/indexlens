@@ -5,6 +5,9 @@ import {
   Columns3Icon,
   Trash2Icon,
   Loader2Icon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  ArrowUpDownIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,8 +54,16 @@ import type { IndexTarget } from "@/components/index-pattern-editor";
 import { DocumentViewerSheet } from "@/components/document-viewer-sheet";
 import type { MappingField } from "@/lib/es-mapping";
 import type { ClusterConfig } from "@/types/cluster";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { hitKey, buildBulkDeleteBody } from "@/lib/document-helpers";
+import {
+  hitKey,
+  buildBulkDeleteBody,
+  buildEsSortClause,
+  resolveSortField,
+  type SortState,
+  type SortDir,
+} from "@/lib/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,6 +147,7 @@ export function DocumentsPage({
   const [indexTargets, setIndexTargets] = useState<IndexTarget[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const queryTextRef = useRef("");
+  const [sort, setSort] = useState<SortState | null>(null);
 
   // Selection state – keys are hitKey(hit) = `_index\0_id`
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -145,6 +157,11 @@ export function DocumentsPage({
   useEffect(() => {
     setSelected(new Set());
   }, [hits, page, activeQuery, activeTarget]);
+
+  // Reset sort when the index target changes
+  useEffect(() => {
+    setSort(null);
+  }, [activeTarget]);
 
   // Fetch mapping fields for autocomplete + query compilation
   useEffect(() => {
@@ -239,6 +256,25 @@ export function DocumentsPage({
     [fields, indexPattern, indexName],
   );
 
+  const handleSort = useCallback(
+    (field: string) => {
+      // Check if this field is sortable
+      const resolved = resolveSortField(field, fields);
+      if (resolved === null) return;
+
+      setSort((prev) => {
+        if (prev && prev.field === field) {
+          // Toggle direction, or clear on third click
+          if (prev.dir === "asc") return { field, dir: "desc" as SortDir };
+          return null; // clear sort
+        }
+        return { field, dir: "asc" };
+      });
+      setPage(0);
+    },
+    [fields],
+  );
+
   const fetchDocuments = useCallback(
     async (signal: AbortSignal) => {
       setLoading(true);
@@ -246,18 +282,23 @@ export function DocumentsPage({
 
       try {
         const from = page * pageSize;
+        const sortClause = buildEsSortClause(sort, fields);
+        const body: Record<string, unknown> = {
+          from,
+          size: pageSize,
+          query: activeQuery,
+          version: true,
+          seq_no_primary_term: true,
+        };
+        if (sortClause) {
+          body.sort = sortClause;
+        }
         const result = await esRequest<SearchResponse>(
           cluster,
           `/${encodeIndexPattern(activeTarget)}/_search`,
           {
             method: "POST",
-            body: JSON.stringify({
-              from,
-              size: pageSize,
-              query: activeQuery,
-              version: true,
-              seq_no_primary_term: true,
-            }),
+            body: JSON.stringify(body),
             signal,
           },
         );
@@ -289,7 +330,7 @@ export function DocumentsPage({
         if (!signal.aborted) setLoading(false);
       }
     },
-    [cluster, activeTarget, page, pageSize, activeQuery, refreshKey],
+    [cluster, activeTarget, page, pageSize, activeQuery, sort, fields, refreshKey],
   );
 
   useEffect(() => {
@@ -471,11 +512,26 @@ export function DocumentsPage({
                   disabled={hits.length === 0}
                 />
               </TableHead>
-              <TableHead className="min-w-[200px]">_id</TableHead>
+              <SortableDocHead
+                field="_id"
+                sort={sort}
+                fields={fields}
+                onSort={handleSort}
+                className="min-w-[200px]"
+              >
+                _id
+              </SortableDocHead>
               {visibleColumns.map((col) => (
-                <TableHead key={col} className="min-w-[150px]">
+                <SortableDocHead
+                  key={col}
+                  field={col}
+                  sort={sort}
+                  fields={fields}
+                  onSort={handleSort}
+                  className="min-w-[150px]"
+                >
                   {col}
-                </TableHead>
+                </SortableDocHead>
               ))}
             </TableRow>
           </TableHeader>
@@ -789,6 +845,54 @@ function BulkDeleteDocumentsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sortable document table header
+// ---------------------------------------------------------------------------
+
+function SortableDocHead({
+  children,
+  field,
+  sort,
+  fields,
+  onSort,
+  className,
+}: {
+  children: React.ReactNode;
+  field: string;
+  sort: SortState | null;
+  fields: MappingField[];
+  onSort: (field: string) => void;
+  className?: string;
+}) {
+  const sortable = resolveSortField(field, fields) !== null;
+  const active = sort?.field === field;
+
+  const icon = !sortable ? null : active ? (
+    sort.dir === "asc" ? (
+      <ArrowUpIcon className="size-3.5" />
+    ) : (
+      <ArrowDownIcon className="size-3.5" />
+    )
+  ) : (
+    <ArrowUpDownIcon className="size-3.5 opacity-30" />
+  );
+
+  return (
+    <TableHead
+      className={cn(
+        sortable && "cursor-pointer select-none hover:text-foreground",
+        className,
+      )}
+      onClick={sortable ? () => onSort(field) : undefined}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        {icon}
+      </div>
+    </TableHead>
   );
 }
 
