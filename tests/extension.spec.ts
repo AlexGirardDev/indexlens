@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { readFile } from "node:fs/promises";
 
 const TEST_PASSPHRASE = "my-secure-passphrase-123";
 
@@ -402,6 +403,71 @@ test.describe("Edit cluster configuration", () => {
     await expect(extensionPage.getByLabel("API Key")).toHaveValue("my-api-key-value");
 
     await extensionPage.getByRole("button", { name: /cancel/i }).click();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Encrypted config import/export
+// ---------------------------------------------------------------------------
+
+test.describe("Encrypted config transfer", () => {
+  test("exported config is encrypted and import requires the correct passphrase", async ({ extensionPage }, testInfo) => {
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await extensionPage.getByLabel("Passphrase", { exact: true }).fill(TEST_PASSPHRASE);
+    await extensionPage.getByLabel("Confirm passphrase").fill(TEST_PASSPHRASE);
+    await extensionPage.getByRole("button", { name: /create passphrase/i }).click();
+
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await extensionPage.getByRole("button", { name: /clusters/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+
+    await extensionPage.getByLabel("Name").fill("Encrypted Export Cluster");
+    await extensionPage.getByLabel("URL").fill("https://localhost:9200");
+    await extensionPage.getByRole("combobox").click();
+    await extensionPage.getByRole("option", { name: /basic/i }).click();
+    await extensionPage.getByLabel("Username").fill("elastic");
+    await extensionPage.getByLabel("Password").fill("super-e2e-secret");
+    await extensionPage.getByRole("button", { name: /add cluster/i }).click();
+
+    await extensionPage.getByRole("button", { name: /settings/i }).click();
+
+    const downloadPromise = extensionPage.waitForEvent("download");
+    await extensionPage.getByRole("button", { name: /export encrypted config/i }).click();
+    await extensionPage.locator("#export-passphrase").fill("transfer-passphrase-123");
+    await extensionPage.locator("#export-passphrase-confirm").fill("transfer-passphrase-123");
+    await extensionPage.getByRole("button", { name: /^export$/i }).click();
+
+    const download = await downloadPromise;
+    const exportPath = testInfo.outputPath("indexlens-config-export.json");
+    await download.saveAs(exportPath);
+
+    const exportContents = await readFile(exportPath, "utf8");
+    expect(exportContents).toContain("indexlens-export-encrypted");
+    expect(exportContents).not.toContain("super-e2e-secret");
+    expect(exportContents).not.toContain("\"password\"");
+
+    await extensionPage.locator("input[type='file']").first().setInputFiles(exportPath);
+    await expect(
+      extensionPage.getByRole("heading", { name: /import encrypted configuration/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    await extensionPage.locator("#import-passphrase").fill("wrong-passphrase");
+    await extensionPage.getByRole("button", { name: /^import$/i }).click();
+    await expect(
+      extensionPage.getByText(/unable to decrypt indexlens config/i),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await extensionPage.locator("#import-passphrase").fill("transfer-passphrase-123");
+    await extensionPage.getByRole("button", { name: /^import$/i }).click();
+    await expect(
+      extensionPage.getByText(/no new data to import|imported/i),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });
 

@@ -95,6 +95,7 @@ export function decodeSalt(b64: string): Uint8Array<ArrayBuffer> {
 export async function deriveKey(
   passphrase: string,
   salt: Uint8Array<ArrayBuffer>,
+  iterations = PBKDF2_ITERATIONS,
 ): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -108,7 +109,7 @@ export async function deriveKey(
     {
       name: "PBKDF2",
       salt: salt as BufferSource,
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
       hash: "SHA-256",
     },
     keyMaterial,

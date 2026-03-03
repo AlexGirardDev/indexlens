@@ -1,12 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildExportPayload,
+  buildEncryptedExportEnvelope,
+  decryptExportEnvelope,
+  parseEncryptedExportEnvelope,
   parseIndexLensPayload,
   parseElasticvuePayload,
   mergeClusters,
   mergeSavedQueries,
   INDEXLENS_EXPORT_VERSION,
+  INDEXLENS_ENCRYPTED_EXPORT_FORMAT,
 } from "./config-transfer";
+import { CONFIG_TRANSFER_VERSION, PBKDF2_ITERATIONS } from "@/security/constants";
 import type { ClusterConfig } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 
@@ -17,10 +22,13 @@ import type { SavedQuery } from "@/lib/rest-query-storage";
 let uuidCounter = 0;
 beforeEach(() => {
   uuidCounter = 0;
-  vi.stubGlobal("crypto", {
-    ...globalThis.crypto,
-    randomUUID: () => `test-uuid-${++uuidCounter}`,
-  });
+  vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+    () => `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, "0")}`,
+  );
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -71,6 +79,87 @@ describe("buildExportPayload", () => {
     const payload = buildExportPayload([], {});
     expect(payload.clusters).toEqual([]);
     expect(payload.savedQueries).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// encrypted transfer envelope
+// ---------------------------------------------------------------------------
+
+describe("encrypted transfer envelope", () => {
+  it("round-trips encrypted payload with the correct passphrase", async () => {
+    const clusters = [
+      makeCluster({
+        auth: {
+          type: "basic",
+          username: "elastic",
+          password: "super-secret-password",
+        },
+      }),
+    ];
+    const savedQueries = { c1: [makeSavedQuery()] };
+    const payload = buildExportPayload(clusters, savedQueries);
+
+    const encrypted = await buildEncryptedExportEnvelope(payload, "transfer-passphrase-123");
+
+    expect(encrypted.format).toBe(INDEXLENS_ENCRYPTED_EXPORT_FORMAT);
+    expect(encrypted.version).toBe(CONFIG_TRANSFER_VERSION);
+    expect(encrypted.kdf.iterations).toBe(PBKDF2_ITERATIONS);
+
+    const serialized = JSON.stringify(encrypted);
+    expect(serialized).not.toContain("super-secret-password");
+    expect(serialized).not.toContain("elastic");
+
+    const decrypted = await decryptExportEnvelope(encrypted, "transfer-passphrase-123");
+    expect(decrypted.clusters).toEqual(clusters);
+    expect(decrypted.savedQueries).toEqual(savedQueries);
+  });
+
+  it("fails with an actionable error for wrong passphrase", async () => {
+    const payload = buildExportPayload([makeCluster()], {});
+    const encrypted = await buildEncryptedExportEnvelope(payload, "correct-passphrase");
+
+    await expect(
+      decryptExportEnvelope(encrypted, "wrong-passphrase"),
+    ).rejects.toThrow("Unable to decrypt IndexLens config");
+  });
+
+  it("rejects malformed envelope shapes", () => {
+    expect(() => parseEncryptedExportEnvelope("bad")).toThrow("expected an object");
+
+    expect(() =>
+      parseEncryptedExportEnvelope({
+        format: INDEXLENS_ENCRYPTED_EXPORT_FORMAT,
+        version: CONFIG_TRANSFER_VERSION,
+        exportedAt: new Date().toISOString(),
+        kdf: {
+          algorithm: "PBKDF2",
+          hash: "SHA-256",
+          iterations: PBKDF2_ITERATIONS,
+          salt: "",
+          version: 1,
+        },
+        ciphertext: { v: 1, iv: "abc", data: "def" },
+      }),
+    ).toThrow("kdf.salt");
+  });
+
+  it("rejects unsupported envelope versions", () => {
+    expect(() =>
+      parseEncryptedExportEnvelope({
+        format: INDEXLENS_ENCRYPTED_EXPORT_FORMAT,
+        version: 99,
+        exportedAt: new Date().toISOString(),
+        kdf: {
+          algorithm: "PBKDF2",
+          hash: "SHA-256",
+          iterations: PBKDF2_ITERATIONS,
+          salt: "ZmFrZS1zYWx0",
+          version: 1,
+        },
+        ciphertext: { v: 1, iv: "ZmFrZS1pdg==", data: "ZmFrZS1jaXBoZXJ0ZXh0" },
+      }),
+    ).toThrow("Unsupported encrypted IndexLens config version");
   });
 });
 
