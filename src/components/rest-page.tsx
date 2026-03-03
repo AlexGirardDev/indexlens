@@ -429,7 +429,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
   return (
     <div className="flex flex-1 gap-0 h-full">
       {/* Left panel — Request */}
-      <div className="flex-1 flex flex-col p-6 gap-3 border-r min-w-0">
+      <div className="flex-1 flex flex-col p-6 gap-3 border-r min-w-0 overflow-hidden">
         {/* Method + Endpoint + Actions */}
         <div className="flex gap-2 items-center">
           <Select value={method} onValueChange={setMethod}>
@@ -532,7 +532,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
       </div>
 
       {/* Right panel — Response */}
-      <div className="flex-1 flex flex-col p-6 gap-3 min-w-0">
+      <div className="flex-1 flex flex-col p-6 gap-3 min-w-0 overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-sm">
             <span className="text-muted-foreground">Response</span>
