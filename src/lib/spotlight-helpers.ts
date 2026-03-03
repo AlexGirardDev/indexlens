@@ -4,7 +4,7 @@
  */
 
 import type { SavedQuery } from "@/lib/rest-query-storage";
-import type { Page } from "@/types/cluster";
+import type { ClusterConfig, Page } from "@/types/cluster";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,7 +27,12 @@ export interface SpotlightSavedQueryItem {
   query: SavedQuery;
 }
 
-export type SpotlightItem = SpotlightNavItem | SpotlightIndexItem | SpotlightSavedQueryItem;
+export interface SpotlightClusterItem {
+  type: "cluster";
+  cluster: ClusterConfig;
+}
+
+export type SpotlightItem = SpotlightNavItem | SpotlightIndexItem | SpotlightSavedQueryItem | SpotlightClusterItem;
 
 export interface RestPreloadAction {
   method: string;
@@ -62,6 +67,12 @@ export function buildIndexItems(
 
 export function buildSavedQueryItems(queries: SavedQuery[]): SpotlightSavedQueryItem[] {
   return queries.map((query) => ({ type: "saved-query", query }));
+}
+
+export function buildClusterItems(clusters: ClusterConfig[], activeClusterId: string | null): SpotlightClusterItem[] {
+  return clusters
+    .filter((c) => c.id !== activeClusterId)
+    .map((cluster) => ({ type: "cluster", cluster }));
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +118,11 @@ export function filterSpotlightItems(
           item.query.name.toLowerCase().includes(lower) ||
           item.query.method.toLowerCase().includes(lower) ||
           item.query.endpoint.toLowerCase().includes(lower)
+        );
+      case "cluster":
+        return (
+          item.cluster.name.toLowerCase().includes(lower) ||
+          item.cluster.url.toLowerCase().includes(lower)
         );
     }
   });

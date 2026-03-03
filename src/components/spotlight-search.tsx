@@ -15,7 +15,7 @@ import {
   CommandItem,
   CommandShortcut,
 } from "@/components/ui/command";
-import type { Page } from "@/types/cluster";
+import type { ClusterConfig, Page } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +35,8 @@ export interface SpotlightProps {
   onSelectSavedQuery: (query: SavedQuery) => void;
   indices: SpotlightIndex[];
   savedQueries: SavedQuery[];
+  clusters: ClusterConfig[];
+  onSelectCluster: (cluster: ClusterConfig) => void;
   loading?: boolean;
 }
 
@@ -61,6 +63,8 @@ export function SpotlightSearch({
   onSelectSavedQuery,
   indices,
   savedQueries,
+  clusters,
+  onSelectCluster,
   loading,
 }: SpotlightProps) {
   const handleSelect = (callback: () => void) => {
@@ -81,6 +85,26 @@ export function SpotlightSearch({
         <CommandEmpty>
           {loading ? "Loading..." : "No results found."}
         </CommandEmpty>
+
+        {/* Clusters */}
+        {clusters.length > 0 && (
+          <CommandGroup heading="Clusters">
+            {clusters.map((cluster) => (
+              <CommandItem
+                key={cluster.id}
+                value={`cluster-${cluster.id}`}
+                keywords={[cluster.name, cluster.url]}
+                onSelect={() => handleSelect(() => onSelectCluster(cluster))}
+              >
+                <span
+                  className="size-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: cluster.color }}
+                />
+                <span>{cluster.name}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
 
         {/* Navigation */}
         <CommandGroup heading="Navigation">

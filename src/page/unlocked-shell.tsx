@@ -189,6 +189,13 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
     [navigateIndex],
   );
 
+  const handleSpotlightSelectCluster = useCallback(
+    (cluster: ClusterConfig) => {
+      navigate(cluster.id, page === "indices" ? "dashboard" : page);
+    },
+    [navigate, page],
+  );
+
   const handleSpotlightSelectSavedQuery = useCallback(
     (query: SavedQuery) => {
       const pending: PendingRestQuery = {
@@ -319,18 +326,18 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
         initial={editingCluster}
       />
 
-      {activeCluster && (
-        <SpotlightSearch
-          open={spotlightOpen}
-          onOpenChange={setSpotlightOpen}
-          onNavigate={handleSpotlightNavigate}
-          onSelectIndex={handleSpotlightSelectIndex}
-          onSelectSavedQuery={handleSpotlightSelectSavedQuery}
-          indices={spotlightIndices}
-          savedQueries={spotlightSavedQueries}
-          loading={spotlightLoading}
-        />
-      )}
+      <SpotlightSearch
+        open={spotlightOpen}
+        onOpenChange={setSpotlightOpen}
+        onNavigate={handleSpotlightNavigate}
+        onSelectIndex={handleSpotlightSelectIndex}
+        onSelectSavedQuery={handleSpotlightSelectSavedQuery}
+        indices={spotlightIndices}
+        savedQueries={spotlightSavedQueries}
+        clusters={clusters.filter((c) => c.id !== activeCluster?.id)}
+        onSelectCluster={handleSpotlightSelectCluster}
+        loading={spotlightLoading}
+      />
     </div>
   );
 }

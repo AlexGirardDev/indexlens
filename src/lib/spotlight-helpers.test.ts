@@ -3,11 +3,13 @@ import {
   buildNavItems,
   buildIndexItems,
   buildSavedQueryItems,
+  buildClusterItems,
   resolveRestPreload,
   filterSpotlightItems,
 } from "./spotlight-helpers";
 import type { SpotlightItem } from "./spotlight-helpers";
 import type { SavedQuery } from "./rest-query-storage";
+import type { ClusterConfig } from "@/types/cluster";
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -22,6 +24,17 @@ function makeSavedQuery(overrides?: Partial<SavedQuery>): SavedQuery {
     body: "",
     createdAt: 1000,
     updatedAt: 1000,
+    ...overrides,
+  };
+}
+
+function makeCluster(overrides?: Partial<ClusterConfig>): ClusterConfig {
+  return {
+    id: "c1",
+    name: "Production",
+    url: "https://es-prod.example.com",
+    auth: { type: "none" },
+    color: "#3b82f6",
     ...overrides,
   };
 }
@@ -78,6 +91,34 @@ describe("buildSavedQueryItems", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildClusterItems
+// ---------------------------------------------------------------------------
+
+describe("buildClusterItems", () => {
+  const clusters = [
+    makeCluster({ id: "c1", name: "Production" }),
+    makeCluster({ id: "c2", name: "Staging" }),
+    makeCluster({ id: "c3", name: "Development" }),
+  ];
+
+  it("returns all clusters except the active one", () => {
+    const items = buildClusterItems(clusters, "c1");
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.cluster.id)).toEqual(["c2", "c3"]);
+    expect(items.every((i) => i.type === "cluster")).toBe(true);
+  });
+
+  it("returns all clusters when activeClusterId is null", () => {
+    const items = buildClusterItems(clusters, null);
+    expect(items).toHaveLength(3);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(buildClusterItems([], "c1")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveRestPreload
 // ---------------------------------------------------------------------------
 
@@ -125,6 +166,13 @@ describe("filterSpotlightItems", () => {
       makeSavedQuery({ id: "q1", name: "Health Check", method: "GET", endpoint: "/_cluster/health" }),
       makeSavedQuery({ id: "q2", name: "Search Logs", method: "POST", endpoint: "/logs-2024/_search" }),
     ]),
+    ...buildClusterItems(
+      [
+        makeCluster({ id: "c1", name: "Production", url: "https://es-prod.example.com" }),
+        makeCluster({ id: "c2", name: "Staging", url: "https://es-staging.example.com" }),
+      ],
+      null,
+    ),
   ];
 
   it("returns all items when search is empty", () => {
@@ -180,6 +228,24 @@ describe("filterSpotlightItems", () => {
     expect(result[0].type).toBe("nav");
     if (result[0].type === "nav") {
       expect(result[0].page).toBe("settings");
+    }
+  });
+
+  it("filters cluster items by name", () => {
+    const result = filterSpotlightItems(allItems, "Staging");
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("cluster");
+    if (result[0].type === "cluster") {
+      expect(result[0].cluster.name).toBe("Staging");
+    }
+  });
+
+  it("filters cluster items by URL", () => {
+    const result = filterSpotlightItems(allItems, "es-prod");
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("cluster");
+    if (result[0].type === "cluster") {
+      expect(result[0].cluster.name).toBe("Production");
     }
   });
 
