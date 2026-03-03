@@ -53,6 +53,7 @@ import { cmTheme, cmViewerTheme } from "@/lib/codemirror-theme";
 import { esRequest } from "@/lib/es-client";
 import { fetchIndexFields } from "@/lib/es-mapping";
 import { esDslCompletions } from "@/lib/es-query-completions";
+import { autoMethodForEndpoint } from "@/lib/es-endpoint-method";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   loadHistory,
@@ -74,6 +75,7 @@ import type { PendingRestQuery } from "@/page/unlocked-shell";
 // ---------------------------------------------------------------------------
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "HEAD"] as const;
+const DEFAULT_HTTP_METHOD = "GET";
 
 const ES_OPERATIONS: Completion[] = [
   "_search",
@@ -235,7 +237,7 @@ interface RestPageProps {
 }
 
 export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, onVimModeChange }: RestPageProps) {
-  const [method, setMethod] = useState<string>("GET");
+  const [method, setMethod] = useState<string>(DEFAULT_HTTP_METHOD);
   const [endpoint, setEndpoint] = useState("");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<RawEsResponse | null>(null);
@@ -432,7 +434,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
       <div className="flex-1 flex flex-col p-6 gap-3 border-r min-w-0 overflow-hidden">
         {/* Method + Endpoint + Actions */}
         <div className="flex gap-2 items-center">
-          <Select value={method} onValueChange={setMethod}>
+          <Select value={method} onValueChange={(nextMethod) => setMethod(nextMethod)}>
             <SelectTrigger className="w-[110px] font-mono">
               <SelectValue />
             </SelectTrigger>
@@ -450,8 +452,19 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
               indexNames={indexNames}
               initialValue={endpointRef.current}
               onChange={(v) => {
+                const previousEndpoint = endpointRef.current;
+                const previousAutoMethod = autoMethodForEndpoint(previousEndpoint);
+                const wasAutoMethod = method === previousAutoMethod;
+
                 endpointRef.current = v;
                 setEndpoint(v);
+
+                if (wasAutoMethod) {
+                  const nextAutoMethod = autoMethodForEndpoint(v);
+                  if (nextAutoMethod !== method) {
+                    setMethod(nextAutoMethod);
+                  }
+                }
               }}
               onExecute={handleSend}
               vimMode={vimMode}
