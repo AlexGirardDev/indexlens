@@ -241,6 +241,7 @@ export function ActionDialogs({
 // Refresh action (no dialog)
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function executeRefresh(
   cluster: ClusterConfig,
   indexNames: string[],

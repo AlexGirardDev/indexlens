@@ -54,12 +54,16 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 
 ```bash
 npm install
-npm run build
+npm run build:extension
 ```
+
+`npm run build:extension` generates `dist/` and writes `dist/manifest.json` with:
+- `manifest_version: 3` (validated from `public/manifest.json`)
+- `version` sourced from `package.json` (or `EXTENSION_VERSION` if explicitly provided)
 
 ### Load in Chrome
 
-1. Run `npm run build` to produce the `dist/` folder.
+1. Run `npm run build:extension` to produce the `dist/` folder.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the `dist/` directory.
 4. Click the IndexLens toolbar icon to open the extension in a new tab (or focus an existing one).
@@ -117,11 +121,29 @@ IndexLens encrypts all cluster configurations and credentials at rest using a pa
 
 ## Development
 
+### Versioning Source of Truth
+
+- `package.json` `version` is the canonical extension version.
+- `public/manifest.json` is the MV3 metadata template and intentionally does not carry a fixed `version`.
+- During build, Vite generates `dist/manifest.json` and injects the resolved version.
+- Optional CI override: set `EXTENSION_VERSION` to a valid Chrome-extension version string (1-4 numeric parts, each `0-65535`).
+
+### Local Release Packaging
+
+```bash
+npm run package:extension
+```
+
+This runs `build:extension` and then creates a deterministic zip at:
+- `artifacts/indexlens-vX.Y.Z.zip`
+
+The zip includes runtime files from `dist/` only and is suitable for extension distribution.
+
 ### Lint & Type-Check
 
 ```bash
 npm run lint
-npm run build   # runs tsc -b before vite build
+npm run build:extension   # runs tsc -b before vite build
 ```
 
 ### Unit Tests
@@ -138,7 +160,7 @@ The project includes Playwright-based end-to-end tests that load the built exten
 
 1. Build the extension first — tests load from `dist/`:
    ```bash
-   npm run build
+   npm run build:extension
    ```
 2. Install Playwright browsers (one-time):
    ```bash
@@ -161,6 +183,39 @@ Chrome extensions cannot run in headless mode, so all E2E tests launch a visible
 ```bash
 xvfb-run npm run test:e2e
 ```
+
+## CI and Releases
+
+GitHub Actions workflow: `.github/workflows/extension-build.yml`
+
+- On pull requests and pushes, CI runs:
+  1. `npm ci`
+  2. `npm run lint`
+  3. `npm run test` (unit tests)
+  4. `npm run package:extension`
+  5. Upload `artifacts/*.zip` as a workflow artifact
+- On semantic version tags (`v*`), the same workflow also publishes the zip to a GitHub Release via `softprops/action-gh-release`.
+
+### Version Bump and Release Flow
+
+1. Update `package.json` version (for example via `npm version patch|minor|major`).
+2. Run `npm run package:extension` locally to verify packaging output.
+3. Push your changes and create/push a matching version tag like `v1.2.3`.
+4. Download the release zip from either:
+   - GitHub Actions run artifacts (all runs), or
+   - GitHub Release assets (tagged `v*` runs).
+
+### Troubleshooting
+
+- Version mismatch/build failure:
+  - Ensure `package.json` version is a valid extension version (`1`, `1.2`, `1.2.3`, or `1.2.3.4` with each part `0-65535`).
+  - If using `EXTENSION_VERSION`, ensure it is valid and intended.
+- Missing `dist/` when packaging:
+  - Run `npm run build:extension` or use `npm run package:extension` (which builds first).
+- Invalid `manifest_version` error:
+  - Confirm `public/manifest.json` contains `"manifest_version": 3`.
+- Workflow artifact not found:
+  - Confirm `npm run package:extension` completed in CI and inspect the `Upload extension zip artifact` step logs.
 
 ## Project Structure
 

@@ -98,7 +98,7 @@ function getJsonAncestors(text: string, cursorPos: number): string[] {
       i++;
     } else {
       // Skip tokens (numbers, true, false, null)
-      while (i < cursorPos && !/[\s,\}\]\:\{\[\"]/.test(text[i])) i++;
+      while (i < cursorPos && !/[\s,}\]:{["]/.test(text[i])) i++;
     }
   }
 
