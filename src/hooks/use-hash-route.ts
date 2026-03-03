@@ -6,7 +6,7 @@ import type { Page } from "@/types/cluster";
 //               #/<clusterId>/indices/<indexName>
 // ---------------------------------------------------------------------------
 
-const VALID_PAGES = new Set<string>(["dashboard", "indices", "rest"]);
+const VALID_PAGES = new Set<string>(["dashboard", "indices", "rest", "settings"]);
 
 function isValidPage(value: string | undefined): value is Page {
   return value !== undefined && VALID_PAGES.has(value);

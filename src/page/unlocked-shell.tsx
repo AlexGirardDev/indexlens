@@ -5,6 +5,7 @@ import { DashboardPage } from "@/components/dashboard-page";
 import { IndicesPage } from "@/components/indices-page";
 import { DocumentsPage } from "@/components/documents-page";
 import { RestPage } from "@/components/rest-page";
+import { SettingsPage } from "@/components/settings-page";
 import { SpotlightSearch } from "@/components/spotlight-search";
 import type { SpotlightIndex } from "@/components/spotlight-search";
 import { useHashRoute } from "@/hooks/use-hash-route";
@@ -232,6 +233,17 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
     await persistClusters(next);
   };
 
+  const handleImportClusters = useCallback(async (imported: ClusterConfig[]) => {
+    const next = [...clusters];
+    for (const c of imported) {
+      if (!next.some((existing) => existing.id === c.id)) {
+        next.push(c);
+      }
+    }
+    setClusters(next);
+    await persistClusters(next);
+  }, [clusters, persistClusters]);
+
   const handleDialogOpenChange = (open: boolean) => {
     setDialogOpen(open);
     if (!open) {
@@ -261,7 +273,12 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
       />
 
       <main className="flex-1 flex flex-col">
-        {!activeCluster ? (
+        {page === "settings" ? (
+          <SettingsPage
+            clusters={clusters}
+            onClustersChange={handleImportClusters}
+          />
+        ) : !activeCluster ? (
           <div className="flex-1 flex items-center justify-center p-6">
             <p className="text-muted-foreground">
               No cluster selected. Add one to get started.
