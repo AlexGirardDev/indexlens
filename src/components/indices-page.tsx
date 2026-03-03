@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   SearchIcon,
   ChevronLeftIcon,
@@ -30,6 +30,13 @@ import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { esRequest, EsRequestError } from "@/lib/es-client";
 import type { ClusterConfig } from "@/types/cluster";
+import {
+  IndexActionsDropdown,
+  BulkActionsBar,
+  ActionDialogs,
+  executeRefresh,
+  type ActionDialog,
+} from "@/components/index-actions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,6 +83,7 @@ interface SortState {
 const DEFAULT_PAGE_SIZE = 20;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const DEBOUNCE_MS = 300;
+const COL_SPAN = 8;
 
 const CAT_INDICES_COLS = "index,pri,rep,docs.count,store.size,creation.date.string";
 
@@ -199,11 +207,23 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [showSystem, setShowSystem] = useState(false);
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Selection state
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Action dialog state
+  const [actionDialog, setActionDialog] = useState<ActionDialog | null>(null);
 
   // Reset page when filter or page size changes
   useEffect(() => {
     setPage(0);
   }, [debouncedFilter, pageSize, showSystem]);
+
+  // Clear selection when data, page, filter, sort changes
+  useEffect(() => {
+    setSelected(new Set());
+  }, [rows, page, debouncedFilter, sort, showSystem]);
 
   // Fetch indices + aliases
   const fetchIndices = useCallback(
@@ -247,7 +267,7 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
         if (!signal.aborted) setLoading(false);
       }
     },
-    [cluster, debouncedFilter],
+    [cluster, debouncedFilter, refreshKey],
   );
 
   useEffect(() => {
@@ -283,6 +303,49 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
     setPage(0);
   };
 
+  // Selection helpers
+  const allPageSelected = pageRows.length > 0 && pageRows.every((r) => selected.has(r.name));
+  const somePageSelected = pageRows.some((r) => selected.has(r.name));
+
+  const handleSelectAll = () => {
+    if (allPageSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(pageRows.map((r) => r.name)));
+    }
+  };
+
+  const handleSelectRow = (name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  // Action handler
+  const handleAction = (action: string, indexNames: string[]) => {
+    if (action === "refresh") {
+      executeRefresh(cluster, indexNames, () => {
+        setRefreshKey((k) => k + 1);
+        if (indexNames.length > 1) setSelected(new Set());
+      });
+      return;
+    }
+    setActionDialog({ action, indexNames });
+  };
+
+  const handleActionSuccess = () => {
+    setRefreshKey((k) => k + 1);
+    if (actionDialog && actionDialog.indexNames.length > 1) {
+      setSelected(new Set());
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-6 h-full">
       {/* Toolbar */}
@@ -313,6 +376,14 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <IndeterminateCheckbox
+                  checked={allPageSelected}
+                  indeterminate={somePageSelected && !allPageSelected}
+                  onChange={handleSelectAll}
+                  disabled={pageRows.length === 0}
+                />
+              </TableHead>
               <SortableHead
                 sortKey="name"
                 current={sort}
@@ -356,6 +427,7 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
               >
                 Date Created
               </SortableHead>
+              <TableHead className="w-[70px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -364,7 +436,7 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
             ) : error ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={COL_SPAN}
                   className="h-24 text-center text-destructive"
                 >
                   {error}
@@ -373,7 +445,7 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
             ) : sorted.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={COL_SPAN}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {debouncedFilter
@@ -383,7 +455,15 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
               </TableRow>
             ) : (
               pageRows.map((row) => (
-                <TableRow key={row.name}>
+                <TableRow key={row.name} data-state={selected.has(row.name) ? "selected" : undefined}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.name)}
+                      onChange={() => handleSelectRow(row.name)}
+                      className="size-4 rounded border-input accent-primary"
+                    />
+                  </TableCell>
                   <TableCell className="font-mono text-sm">
                     <button
                       className="text-primary hover:underline cursor-pointer text-left"
@@ -424,12 +504,25 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
                   <TableCell className="text-sm">
                     {formatDate(row.createdAt)}
                   </TableCell>
+                  <TableCell>
+                    <IndexActionsDropdown
+                      indexName={row.name}
+                      onAction={handleAction}
+                    />
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Bulk actions bar */}
+      <BulkActionsBar
+        selected={selected}
+        onAction={handleAction}
+        onClear={() => setSelected(new Set())}
+      />
 
       {/* Pagination */}
       {!loading && sorted.length > 0 && (
@@ -482,7 +575,50 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
           </div>
         </div>
       )}
+
+      {/* Action dialogs */}
+      <ActionDialogs
+        actionDialog={actionDialog}
+        cluster={cluster}
+        onClose={() => setActionDialog(null)}
+        onSuccess={handleActionSuccess}
+      />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Indeterminate checkbox
+// ---------------------------------------------------------------------------
+
+function IndeterminateCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      disabled={disabled}
+      className="size-4 rounded border-input accent-primary"
+    />
   );
 }
 
@@ -539,12 +675,14 @@ function SkeletonRows() {
     <>
       {Array.from({ length: 8 }, (_, i) => (
         <TableRow key={i}>
+          <TableCell><Skeleton className="h-4 w-4" /></TableCell>
           <TableCell><Skeleton className="h-4 w-40" /></TableCell>
           <TableCell><Skeleton className="h-4 w-24" /></TableCell>
           <TableCell><Skeleton className="h-4 w-16" /></TableCell>
           <TableCell className="text-right"><Skeleton className="h-4 w-14 ml-auto" /></TableCell>
           <TableCell className="text-right"><Skeleton className="h-4 w-14 ml-auto" /></TableCell>
           <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+          <TableCell><Skeleton className="h-4 w-8" /></TableCell>
         </TableRow>
       ))}
     </>

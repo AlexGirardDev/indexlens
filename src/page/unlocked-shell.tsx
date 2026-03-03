@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Navbar } from "@/components/navbar";
 import { ClusterDialog } from "@/components/add-cluster-dialog";
+import { DashboardPage } from "@/components/dashboard-page";
 import { IndicesPage } from "@/components/indices-page";
 import { DocumentsPage } from "@/components/documents-page";
 import { RestPage } from "@/components/rest-page";
@@ -133,11 +134,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
         ) : page === "rest" ? (
           <RestPage cluster={activeCluster} />
         ) : (
-          <div className="flex-1 flex items-center justify-center p-6">
-            <p className="text-muted-foreground">
-              {activeCluster.name} &mdash; {page}
-            </p>
-          </div>
+          <DashboardPage cluster={activeCluster} />
         )}
       </main>
 
