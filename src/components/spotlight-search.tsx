@@ -1,3 +1,4 @@
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   LayoutDashboardIcon,
   ListIcon,
@@ -5,6 +6,7 @@ import {
   SettingsIcon,
   DatabaseIcon,
   BookmarkIcon,
+  ChevronRightIcon,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -17,6 +19,13 @@ import {
 } from "@/components/ui/command";
 import type { ClusterConfig, Page } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
+import {
+  parseSpotlightInput,
+  filterCommands,
+  buildCommandInputValue,
+  SPOTLIGHT_COMMANDS,
+  type SpotlightCommand,
+} from "@/lib/spotlight-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,104 +76,181 @@ export function SpotlightSearch({
   onSelectCluster,
   loading,
 }: SpotlightProps) {
-  const handleSelect = (callback: () => void) => {
-    callback();
-    onOpenChange(false);
-  };
+  const [inputValue, setInputValue] = useState("");
+
+  // Reset input when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setInputValue("");
+    }
+  }, [open]);
+
+  const inputState = useMemo(() => parseSpotlightInput(inputValue), [inputValue]);
+
+  const isCommandMode = inputState.mode !== "search";
+
+  const handleSelectAndClose = useCallback(
+    (callback: () => void) => {
+      callback();
+      onOpenChange(false);
+    },
+    [onOpenChange],
+  );
+
+  const handleSelectCommand = useCallback(
+    (command: SpotlightCommand) => {
+      setInputValue(buildCommandInputValue(command));
+    },
+    [],
+  );
+
+  // Filter clusters when in command-active mode (Select Cluster)
+  const filteredClusters = useMemo(() => {
+    if (inputState.mode !== "command-active" || inputState.command.id !== "select-cluster") {
+      return [];
+    }
+    const filter = inputState.filter.toLowerCase();
+    if (!filter) return clusters;
+    return clusters.filter(
+      (c) =>
+        c.name.toLowerCase().includes(filter) ||
+        c.url.toLowerCase().includes(filter),
+    );
+  }, [inputState, clusters]);
+
+  // Filter commands when in command-list mode
+  const filteredCommandList = useMemo(() => {
+    if (inputState.mode !== "command-list") return [];
+    return filterCommands(SPOTLIGHT_COMMANDS, inputState.filter);
+  }, [inputState]);
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Spotlight Search"
-      description="Search for pages, indices, and saved queries"
+      description="Search for pages, indices, saved queries, and commands"
       showCloseButton={false}
+      shouldFilter={!isCommandMode}
     >
-      <CommandInput placeholder="Search pages, indices, saved queries..." />
+      <CommandInput
+        placeholder="Search pages, indices, saved queries... (> for commands)"
+        value={inputValue}
+        onValueChange={setInputValue}
+      />
       <CommandList>
         <CommandEmpty>
           {loading ? "Loading..." : "No results found."}
         </CommandEmpty>
 
-        {/* Clusters */}
-        {clusters.length > 0 && (
-          <CommandGroup heading="Clusters">
-            {clusters.map((cluster) => (
+        {/* --- Command-list mode: show available commands --- */}
+        {inputState.mode === "command-list" && (
+          <CommandGroup heading="Commands">
+            {filteredCommandList.map((cmd) => (
               <CommandItem
-                key={cluster.id}
-                value={`cluster-${cluster.id}`}
-                keywords={[cluster.name, cluster.url]}
-                onSelect={() => handleSelect(() => onSelectCluster(cluster))}
+                key={cmd.id}
+                value={cmd.id}
+                onSelect={() => handleSelectCommand(cmd)}
               >
-                <span
-                  className="size-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: cluster.color }}
-                />
-                <span>{cluster.name}</span>
+                <ChevronRightIcon className="size-4" />
+                <span>{cmd.label}</span>
               </CommandItem>
             ))}
           </CommandGroup>
         )}
 
-        {/* Navigation */}
-        <CommandGroup heading="Navigation">
-          {NAV_ITEMS.map(({ page, label, icon, shortcut }) => (
-            <CommandItem
-              key={page}
-              value={`nav-${page}`}
-              keywords={[label, page]}
-              onSelect={() => handleSelect(() => onNavigate(page))}
-            >
-              {icon}
-              <span>{label}</span>
-              {shortcut && <CommandShortcut>{shortcut}</CommandShortcut>}
-            </CommandItem>
-          ))}
-        </CommandGroup>
+        {/* --- Command-active mode: Select Cluster --- */}
+        {inputState.mode === "command-active" &&
+          inputState.command.id === "select-cluster" && (
+            <CommandGroup heading="Select Cluster">
+              {filteredClusters.map((cluster) => (
+                <CommandItem
+                  key={cluster.id}
+                  value={`cluster-${cluster.id}`}
+                  onSelect={() =>
+                    handleSelectAndClose(() => onSelectCluster(cluster))
+                  }
+                >
+                  <span
+                    className="size-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: cluster.color }}
+                  />
+                  <span>{cluster.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
 
-        {/* Indices */}
-        {indices.length > 0 && (
-          <CommandGroup heading="Indices">
-            {indices.map(({ name, aliases }) => (
-              <CommandItem
-                key={name}
-                value={`index-${name}`}
-                keywords={[name, ...aliases]}
-                onSelect={() => handleSelect(() => onSelectIndex(name))}
-              >
-                <DatabaseIcon className="size-4" />
-                <span className="font-mono text-sm truncate">{name}</span>
-                {aliases.length > 0 && (
-                  <CommandShortcut>
-                    {aliases.slice(0, 2).join(", ")}
-                    {aliases.length > 2 && ` +${aliases.length - 2}`}
-                  </CommandShortcut>
-                )}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
+        {/* --- Normal search mode --- */}
+        {inputState.mode === "search" && (
+          <>
+            {/* Navigation */}
+            <CommandGroup heading="Navigation">
+              {NAV_ITEMS.map(({ page, label, icon, shortcut }) => (
+                <CommandItem
+                  key={page}
+                  value={`nav-${page}`}
+                  keywords={[label, page]}
+                  onSelect={() =>
+                    handleSelectAndClose(() => onNavigate(page))
+                  }
+                >
+                  {icon}
+                  <span>{label}</span>
+                  {shortcut && <CommandShortcut>{shortcut}</CommandShortcut>}
+                </CommandItem>
+              ))}
+            </CommandGroup>
 
-        {/* Saved Queries */}
-        {savedQueries.length > 0 && (
-          <CommandGroup heading="Saved Queries">
-            {savedQueries.map((query) => (
-              <CommandItem
-                key={query.id}
-                value={`query-${query.id}-${query.name}`}
-                keywords={[query.name, query.method, query.endpoint]}
-                onSelect={() => handleSelect(() => onSelectSavedQuery(query))}
-              >
-                <BookmarkIcon className="size-4" />
-                <span className="truncate">{query.name}</span>
-                <CommandShortcut>
-                  <span className="font-mono">
-                    {query.method} {query.endpoint}
-                  </span>
-                </CommandShortcut>
-              </CommandItem>
-            ))}
-          </CommandGroup>
+            {/* Indices */}
+            {indices.length > 0 && (
+              <CommandGroup heading="Indices">
+                {indices.map(({ name, aliases }) => (
+                  <CommandItem
+                    key={name}
+                    value={`index-${name}`}
+                    keywords={[name, ...aliases]}
+                    onSelect={() =>
+                      handleSelectAndClose(() => onSelectIndex(name))
+                    }
+                  >
+                    <DatabaseIcon className="size-4" />
+                    <span className="font-mono text-sm truncate">{name}</span>
+                    {aliases.length > 0 && (
+                      <CommandShortcut>
+                        {aliases.slice(0, 2).join(", ")}
+                        {aliases.length > 2 && ` +${aliases.length - 2}`}
+                      </CommandShortcut>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {/* Saved Queries */}
+            {savedQueries.length > 0 && (
+              <CommandGroup heading="Saved Queries">
+                {savedQueries.map((query) => (
+                  <CommandItem
+                    key={query.id}
+                    value={`query-${query.id}-${query.name}`}
+                    keywords={[query.name, query.method, query.endpoint]}
+                    onSelect={() =>
+                      handleSelectAndClose(() => onSelectSavedQuery(query))
+                    }
+                  >
+                    <BookmarkIcon className="size-4" />
+                    <span className="truncate">{query.name}</span>
+                    <CommandShortcut>
+                      <span className="font-mono">
+                        {query.method} {query.endpoint}
+                      </span>
+                    </CommandShortcut>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </>
         )}
       </CommandList>
     </CommandDialog>

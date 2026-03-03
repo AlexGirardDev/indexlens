@@ -34,6 +34,89 @@ export interface SpotlightClusterItem {
 
 export type SpotlightItem = SpotlightNavItem | SpotlightIndexItem | SpotlightSavedQueryItem | SpotlightClusterItem;
 
+// ---------------------------------------------------------------------------
+// Command-mode types & constants
+// ---------------------------------------------------------------------------
+
+export const COMMAND_PREFIX = ">";
+
+export interface SpotlightCommand {
+  id: string;
+  label: string;
+}
+
+export const SPOTLIGHT_COMMANDS: SpotlightCommand[] = [
+  { id: "select-cluster", label: "Select Cluster" },
+];
+
+/**
+ * Describes the current state of the Spotlight input when parsed for
+ * command-mode behaviour.
+ *
+ * - `mode: "search"` — normal contextual search (no leading `>`).
+ * - `mode: "command-list"` — the user typed `>` and is browsing/filtering
+ *   the list of available commands.
+ * - `mode: "command-active"` — a command has been selected (e.g.
+ *   `> Select Cluster`) and the user is now filtering within that command's
+ *   results.
+ */
+export type SpotlightInputState =
+  | { mode: "search"; search: string }
+  | { mode: "command-list"; filter: string }
+  | { mode: "command-active"; command: SpotlightCommand; filter: string };
+
+/**
+ * Parse raw input text into a `SpotlightInputState`.
+ */
+export function parseSpotlightInput(raw: string): SpotlightInputState {
+  const trimmed = raw.trimStart();
+
+  if (!trimmed.startsWith(COMMAND_PREFIX)) {
+    return { mode: "search", search: raw };
+  }
+
+  // Strip the leading '>' and any space after it
+  const afterPrefix = trimmed.slice(1).trimStart();
+
+  // Check if any known command matches the beginning of `afterPrefix`
+  for (const cmd of SPOTLIGHT_COMMANDS) {
+    if (afterPrefix.toLowerCase().startsWith(cmd.label.toLowerCase())) {
+      const rest = afterPrefix.slice(cmd.label.length);
+      // The command must be followed by nothing or a space (not a partial word)
+      if (rest === "" || rest.startsWith(" ")) {
+        return {
+          mode: "command-active",
+          command: cmd,
+          filter: rest.trimStart(),
+        };
+      }
+    }
+  }
+
+  return { mode: "command-list", filter: afterPrefix };
+}
+
+/**
+ * Filter the list of available commands by a search term.
+ */
+export function filterCommands(
+  commands: SpotlightCommand[],
+  filter: string,
+): SpotlightCommand[] {
+  if (!filter) return commands;
+  const lower = filter.toLowerCase();
+  return commands.filter((cmd) => cmd.label.toLowerCase().includes(lower));
+}
+
+/**
+ * Build the display string for an active command in the input field.
+ * e.g. `"> Select Cluster "` — note the trailing space so the user can
+ * start typing a filter immediately.
+ */
+export function buildCommandInputValue(command: SpotlightCommand): string {
+  return `${COMMAND_PREFIX} ${command.label} `;
+}
+
 export interface RestPreloadAction {
   method: string;
   endpoint: string;
