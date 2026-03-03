@@ -4,6 +4,7 @@ import {
   LayoutDashboardIcon,
   ListIcon,
   LockIcon,
+  PencilIcon,
   PlusIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -25,6 +26,7 @@ interface NavbarProps {
   activePage: Page;
   onSelectCluster: (cluster: ClusterConfig) => void;
   onAddCluster: () => void;
+  onEditCluster: (cluster: ClusterConfig) => void;
   onNavigate: (page: Page) => void;
   onLock: () => void;
 }
@@ -41,6 +43,7 @@ export function Navbar({
   activePage,
   onSelectCluster,
   onAddCluster,
+  onEditCluster,
   onNavigate,
   onLock,
 }: NavbarProps) {
@@ -86,6 +89,17 @@ export function Navbar({
                   {activeCluster?.id === cluster.id && (
                     <span className="ml-auto text-xs text-muted-foreground">active</span>
                   )}
+                  <button
+                    type="button"
+                    className="ml-auto p-0.5 rounded hover:bg-accent"
+                    aria-label={`Edit ${cluster.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditCluster(cluster);
+                    }}
+                  >
+                    <PencilIcon className="size-3" />
+                  </button>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />

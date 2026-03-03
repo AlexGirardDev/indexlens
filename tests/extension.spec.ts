@@ -221,6 +221,157 @@ test.describe("Auto-lock after inactivity", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Edit cluster configuration
+// ---------------------------------------------------------------------------
+
+test.describe("Edit cluster configuration", () => {
+  test.beforeEach(async ({ extensionPage }) => {
+    // Complete first-run setup
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const passphraseInput = extensionPage.getByLabel("Passphrase", { exact: true });
+    const confirmInput = extensionPage.getByLabel("Confirm passphrase");
+    const submitButton = extensionPage.getByRole("button", { name: /create passphrase/i });
+
+    await passphraseInput.fill(TEST_PASSPHRASE);
+    await confirmInput.fill(TEST_PASSPHRASE);
+    await submitButton.click();
+
+    // Wait for unlocked state
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Add a cluster with basic auth
+    await extensionPage.getByRole("button", { name: /clusters/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+
+    await extensionPage.getByLabel("Name").fill("Test Cluster");
+    await extensionPage.getByLabel("URL").fill("https://localhost:9200");
+
+    // Select basic auth
+    await extensionPage.getByRole("combobox").click();
+    await extensionPage.getByRole("option", { name: /basic/i }).click();
+
+    await extensionPage.getByLabel("Username").fill("elastic");
+    await extensionPage.getByLabel("Password").fill("secret-password");
+
+    await extensionPage.getByRole("button", { name: /add cluster/i }).click();
+
+    // Cluster should now be active in the navbar
+    await expect(
+      extensionPage.getByRole("button", { name: /test cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("editing only the name preserves auth credentials", async ({ extensionPage }) => {
+    // Open cluster dropdown and click the edit button
+    await extensionPage.getByRole("button", { name: /test cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit test cluster/i }).click();
+
+    // The dialog should be in edit mode
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Verify name is pre-filled
+    await expect(extensionPage.getByLabel("Name")).toHaveValue("Test Cluster");
+
+    // Change only the name — do NOT touch auth fields
+    await extensionPage.getByLabel("Name").fill("Renamed Cluster");
+
+    await extensionPage.getByRole("button", { name: /save changes/i }).click();
+
+    // The cluster should show the new name
+    await expect(
+      extensionPage.getByRole("button", { name: /renamed cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Re-open edit dialog to verify credentials survived
+    await extensionPage.getByRole("button", { name: /renamed cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit renamed cluster/i }).click();
+
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Auth type should still be basic
+    await expect(extensionPage.getByRole("combobox")).toHaveText(/basic/i);
+
+    // Username and password should be populated (not empty)
+    await expect(extensionPage.getByLabel("Username")).toHaveValue("elastic");
+    await expect(extensionPage.getByLabel("Password")).toHaveValue("secret-password");
+
+    // Close dialog
+    await extensionPage.getByRole("button", { name: /cancel/i }).click();
+  });
+
+  test("changing auth field during edit persists the new value", async ({ extensionPage }) => {
+    // Open cluster dropdown and click the edit button
+    await extensionPage.getByRole("button", { name: /test cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit test cluster/i }).click();
+
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Change only the password — leave username untouched
+    await extensionPage.getByLabel("Password").fill("new-password");
+
+    await extensionPage.getByRole("button", { name: /save changes/i }).click();
+
+    // Re-open edit dialog
+    await extensionPage.getByRole("button", { name: /test cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit test cluster/i }).click();
+
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Username should be preserved, password should be the new one
+    await expect(extensionPage.getByLabel("Username")).toHaveValue("elastic");
+    await expect(extensionPage.getByLabel("Password")).toHaveValue("new-password");
+
+    await extensionPage.getByRole("button", { name: /cancel/i }).click();
+  });
+
+  test("switching auth type replaces credentials entirely", async ({ extensionPage }) => {
+    // Open cluster dropdown and click the edit button
+    await extensionPage.getByRole("button", { name: /test cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit test cluster/i }).click();
+
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Switch to API key auth
+    await extensionPage.getByRole("combobox").click();
+    await extensionPage.getByRole("option", { name: /api key/i }).click();
+
+    // Fill in the API key
+    await extensionPage.getByLabel("API Key").fill("my-api-key-value");
+
+    await extensionPage.getByRole("button", { name: /save changes/i }).click();
+
+    // Re-open edit dialog
+    await extensionPage.getByRole("button", { name: /test cluster/i }).click();
+    await extensionPage.getByRole("button", { name: /edit test cluster/i }).click();
+
+    await expect(
+      extensionPage.getByRole("heading", { name: /edit cluster/i }),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Should now be API key auth with the value we set
+    await expect(extensionPage.getByRole("combobox")).toHaveText(/api key/i);
+    await expect(extensionPage.getByLabel("API Key")).toHaveValue("my-api-key-value");
+
+    await extensionPage.getByRole("button", { name: /cancel/i }).click();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Toolbar icon click
 // ---------------------------------------------------------------------------
 
