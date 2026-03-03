@@ -419,6 +419,7 @@ export function DocumentsPage({
             onExecute={handleExecuteQuery}
             onChange={(v) => { queryTextRef.current = v; }}
             vimMode={vimMode}
+            autoFocus
           />
           <p className="text-xs text-destructive h-4">
             {queryError ?? "\u00A0"}
