@@ -66,6 +66,7 @@ import {
 import type { RestHistoryEntry, SavedQuery } from "@/lib/rest-query-storage";
 import type { MappingField } from "@/lib/es-mapping";
 import type { ClusterConfig } from "@/types/cluster";
+import type { PendingRestQuery } from "@/page/unlocked-shell";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -221,9 +222,11 @@ async function rawEsRequest(
 
 interface RestPageProps {
   cluster: ClusterConfig;
+  pendingQuery?: PendingRestQuery | null;
+  consumePendingQuery?: () => PendingRestQuery | null;
 }
 
-export function RestPage({ cluster }: RestPageProps) {
+export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPageProps) {
   const [method, setMethod] = useState<string>("GET");
   const [endpoint, setEndpoint] = useState("");
   const [loading, setLoading] = useState(false);
@@ -360,6 +363,16 @@ export function RestPage({ cluster }: RestPageProps) {
     },
     [],
   );
+
+  // Consume pending query from spotlight selection (one-time)
+  useEffect(() => {
+    if (pendingQuery && consumePendingQuery) {
+      const q = consumePendingQuery();
+      if (q) {
+        applyRequest(q);
+      }
+    }
+  }, [pendingQuery, consumePendingQuery, applyRequest]);
 
   // Save current request as a named query
   const handleSaveQuery = useCallback(() => {
