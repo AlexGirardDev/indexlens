@@ -44,6 +44,7 @@ interface QueryEditorProps {
   onChange?: (value: string) => void;
   className?: string;
   vimMode?: boolean;
+  autoFocus?: boolean;
 }
 
 export function QueryEditor({
@@ -52,6 +53,7 @@ export function QueryEditor({
   onChange,
   className,
   vimMode,
+  autoFocus,
 }: QueryEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -120,6 +122,7 @@ export function QueryEditor({
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    if (autoFocus) { view.focus(); }
 
     return () => {
       view.destroy();

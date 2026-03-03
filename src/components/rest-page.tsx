@@ -464,6 +464,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
               key={`ep-${editorKey}-${vimMode}`}
               indexNames={indexNames}
               initialValue={endpointRef.current}
+              autoFocus
               onChange={(v) => {
                 const previousEndpoint = endpointRef.current;
                 const previousAutoMethod = autoMethodForEndpoint(previousEndpoint);
@@ -880,6 +881,7 @@ function EndpointEditor({
   onFocusBodyEditor,
   vimMode,
   onVimStatus,
+  autoFocus,
 }: {
   indexNames: string[];
   initialValue?: string;
@@ -888,6 +890,7 @@ function EndpointEditor({
   onFocusBodyEditor?: () => boolean;
   vimMode?: boolean;
   onVimStatus?: (status: VimStatus) => void;
+  autoFocus?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -965,6 +968,7 @@ function EndpointEditor({
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    if (autoFocus) { view.focus(); }
 
     return () => {
       view.destroy();
