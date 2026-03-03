@@ -7,6 +7,7 @@ import {
   startCompletion,
 } from "@codemirror/autocomplete";
 import { history, historyKeymap } from "@codemirror/commands";
+import { vim } from "@replit/codemirror-vim";
 import { cn } from "@/lib/utils";
 import { cmTheme } from "@/lib/codemirror-theme";
 import { fieldCompletions } from "@/lib/es-query-completions";
@@ -42,6 +43,7 @@ interface QueryEditorProps {
   onExecute: (query: string) => void;
   onChange?: (value: string) => void;
   className?: string;
+  vimMode?: boolean;
 }
 
 export function QueryEditor({
@@ -49,6 +51,7 @@ export function QueryEditor({
   onExecute,
   onChange,
   className,
+  vimMode,
 }: QueryEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -68,6 +71,7 @@ export function QueryEditor({
     const state = EditorState.create({
       doc: existingDoc ?? "",
       extensions: [
+        ...(vimMode ? [vim()] : []),
         history(),
         keymap.of(historyKeymap),
         cmTheme,
@@ -84,14 +88,21 @@ export function QueryEditor({
               return true;
             },
           },
-          {
-            key: "Enter",
-            run: (view) => {
+          ...(vimMode ? [] : [{
+            key: "Enter" as const,
+            run: (view: EditorView) => {
               onExecuteRef.current(view.state.doc.toString());
               return true;
             },
-          },
+          }]),
         ]),
+        ...(vimMode ? [keymap.of([{
+          key: "Ctrl-Enter",
+          run: (view: EditorView) => { onExecuteRef.current(view.state.doc.toString()); return true; },
+        }, {
+          key: "Mod-Enter",
+          run: (view: EditorView) => { onExecuteRef.current(view.state.doc.toString()); return true; },
+        }])] : []),
         cmPlaceholder(hint),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -114,13 +125,13 @@ export function QueryEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [fields, hint]);
+  }, [fields, hint, vimMode]);
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "rounded-md border overflow-hidden [&_.cm-editor]:outline-none",
+        "rounded-md border overflow-hidden [&_.cm-editor]:outline-none [&_.cm-panels]:hidden",
         className,
       )}
     />

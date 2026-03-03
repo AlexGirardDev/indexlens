@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { EditorView, keymap, lineNumbers, placeholder as cmPlaceholder } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, placeholder as cmPlaceholder, ViewPlugin } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { vim, getCM } from "@replit/codemirror-vim";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
 import { foldGutter } from "@codemirror/language";
@@ -220,13 +221,19 @@ async function rawEsRequest(
 // Component
 // ---------------------------------------------------------------------------
 
+interface VimStatus {
+  mode: string;
+  command: string;
+}
+
 interface RestPageProps {
   cluster: ClusterConfig;
   pendingQuery?: PendingRestQuery | null;
   consumePendingQuery?: () => PendingRestQuery | null;
+  vimMode?: boolean;
 }
 
-export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPageProps) {
+export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode }: RestPageProps) {
   const [method, setMethod] = useState<string>("GET");
   const [endpoint, setEndpoint] = useState("");
   const [loading, setLoading] = useState(false);
@@ -243,6 +250,9 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPag
   const [saveName, setSaveName] = useState("");
   const [renameTarget, setRenameTarget] = useState<SavedQuery | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // Vim status (reported by whichever editor was last active)
+  const [vimStatus, setVimStatus] = useState<VimStatus>({ mode: "NORMAL", command: "" });
 
   // Editor key — bump to force editor remount with new initial values
   const [editorKey, setEditorKey] = useState(0);
@@ -435,7 +445,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPag
           </Select>
           <div className="flex-1">
             <EndpointEditor
-              key={editorKey}
+              key={`ep-${editorKey}-${vimMode}`}
               indexNames={indexNames}
               initialValue={endpointRef.current}
               onChange={(v) => {
@@ -443,6 +453,8 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPag
                 setEndpoint(v);
               }}
               onExecute={handleSend}
+              vimMode={vimMode}
+              onVimStatus={setVimStatus}
             />
           </div>
           <Button onClick={handleSend} disabled={loading} size="sm">
@@ -482,12 +494,14 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPag
         <div className="flex-1 overflow-hidden rounded-md border min-h-0 relative">
           {supportsBody ? (
             <BodyEditor
-              key={`body-${editorKey}`}
+              key={`body-${editorKey}-${vimMode}`}
               fields={fields}
               endpoint={debouncedEndpoint}
               initialValue={initialBodyRef.current}
               onSend={handleSend}
               onChange={(v) => { bodyRef.current = v; }}
+              vimMode={vimMode}
+              onVimStatus={setVimStatus}
             />
           ) : (
             <div className="h-full flex items-center justify-center bg-[#282a36]">
@@ -497,6 +511,9 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery }: RestPag
             </div>
           )}
         </div>
+
+        {/* Vim status bar */}
+        {vimMode && <VimStatusBar status={vimStatus} />}
       </div>
 
       {/* Right panel — Response */}
@@ -741,6 +758,74 @@ function StatusBadge({ status, text }: { status: number; text: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Vim status helpers
+// ---------------------------------------------------------------------------
+
+function readVimStatus(view: EditorView): VimStatus {
+  const cm = getCM(view);
+  if (!cm) return { mode: "NORMAL", command: "" };
+  const vs = cm.state.vim;
+  if (!vs) return { mode: "NORMAL", command: "" };
+
+  let mode = "NORMAL";
+  if (vs.insertMode) mode = "INSERT";
+  else if (vs.visualMode) {
+    if (vs.visualLine) mode = "V-LINE";
+    else if (vs.visualBlock) mode = "V-BLOCK";
+    else mode = "VISUAL";
+  }
+
+  const command = vs.inputState?.keyBuffer?.join("") ?? "";
+
+  return { mode, command };
+}
+
+function vimStatusPlugin(
+  onStatusRef: React.RefObject<((s: VimStatus) => void) | undefined>,
+) {
+  return ViewPlugin.define(() => ({}), {
+    eventHandlers: {
+      focus(_, view) {
+        onStatusRef.current?.(readVimStatus(view));
+      },
+    },
+    provide: () =>
+      EditorView.updateListener.of((update) => {
+        if (update.view.hasFocus) {
+          onStatusRef.current?.(readVimStatus(update.view));
+        }
+      }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Vim status bar component
+// ---------------------------------------------------------------------------
+
+function VimStatusBar({ status }: { status: VimStatus }) {
+  const modeColors: Record<string, string> = {
+    NORMAL: "bg-[#bd93f9] text-[#282a36]",
+    INSERT: "bg-[#50fa7b] text-[#282a36]",
+    VISUAL: "bg-[#ff79c6] text-[#282a36]",
+    "V-LINE": "bg-[#ff79c6] text-[#282a36]",
+    "V-BLOCK": "bg-[#ff79c6] text-[#282a36]",
+  };
+
+  return (
+    <div className="flex items-center gap-2 h-7 px-2 bg-[#282a36] rounded-md border text-xs font-mono select-none">
+      <span
+        className={`px-2 py-0.5 rounded font-bold text-[11px] ${modeColors[status.mode] ?? "bg-muted text-foreground"}`}
+      >
+        {status.mode}
+      </span>
+      {status.command && (
+        <span className="text-[#f8f8f2] tracking-wider">{status.command}</span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Endpoint editor (single-line with autocomplete)
 // ---------------------------------------------------------------------------
 
@@ -749,11 +834,15 @@ function EndpointEditor({
   initialValue,
   onChange,
   onExecute,
+  vimMode,
+  onVimStatus,
 }: {
   indexNames: string[];
   initialValue?: string;
   onChange: (value: string) => void;
   onExecute: () => void;
+  vimMode?: boolean;
+  onVimStatus?: (status: VimStatus) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -761,51 +850,64 @@ function EndpointEditor({
   onExecuteRef.current = onExecute;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onVimStatusRef = useRef(onVimStatus);
+  onVimStatusRef.current = onVimStatus;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const existingDoc = viewRef.current?.state.doc.toString();
 
+    const extensions = [
+      ...(vimMode ? [vim()] : []),
+      history(),
+      keymap.of(historyKeymap),
+      cmTheme,
+      autocompletion({
+        override: [buildEndpointCompletions(indexNames)],
+        activateOnTyping: true,
+      }),
+      keymap.of([
+        {
+          key: "Tab",
+          run: (view) => {
+            if (acceptCompletion(view)) return true;
+            startCompletion(view);
+            return true;
+          },
+        },
+        ...(vimMode ? [] : [{
+          key: "Enter" as const,
+          run: () => {
+            onExecuteRef.current();
+            return true;
+          },
+        }]),
+      ]),
+      ...(vimMode ? [keymap.of([{
+        key: "Ctrl-Enter",
+        run: () => { onExecuteRef.current(); return true; },
+      }, {
+        key: "Mod-Enter",
+        run: () => { onExecuteRef.current(); return true; },
+      }])] : []),
+      cmPlaceholder("/my-index/_search"),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          onChangeRef.current(update.state.doc.toString());
+        }
+      }),
+      ...(vimMode ? [vimStatusPlugin(onVimStatusRef)] : []),
+      EditorView.lineWrapping,
+      EditorState.transactionFilter.of((tr) => {
+        if (tr.newDoc.lines > 1) return [];
+        return tr;
+      }),
+    ];
+
     const state = EditorState.create({
       doc: existingDoc ?? initialValue ?? "",
-      extensions: [
-        history(),
-        keymap.of(historyKeymap),
-        cmTheme,
-        autocompletion({
-          override: [buildEndpointCompletions(indexNames)],
-          activateOnTyping: true,
-        }),
-        keymap.of([
-          {
-            key: "Tab",
-            run: (view) => {
-              if (acceptCompletion(view)) return true;
-              startCompletion(view);
-              return true;
-            },
-          },
-          {
-            key: "Enter",
-            run: () => {
-              onExecuteRef.current();
-              return true;
-            },
-          },
-        ]),
-        cmPlaceholder("/my-index/_search"),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            onChangeRef.current(update.state.doc.toString());
-          }
-        }),
-        EditorView.lineWrapping,
-        EditorState.transactionFilter.of((tr) => {
-          if (tr.newDoc.lines > 1) return [];
-          return tr;
-        }),
-      ],
+      extensions,
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
@@ -815,12 +917,12 @@ function EndpointEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [indexNames]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [indexNames, vimMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
       ref={containerRef}
-      className="rounded-md border overflow-hidden [&_.cm-editor]:outline-none"
+      className="rounded-md border overflow-hidden [&_.cm-editor]:outline-none [&_.cm-panels]:hidden"
     />
   );
 }
@@ -835,12 +937,16 @@ function BodyEditor({
   initialValue,
   onSend,
   onChange,
+  vimMode,
+  onVimStatus,
 }: {
   fields: MappingField[];
   endpoint: string;
   initialValue?: string;
   onSend: () => void;
   onChange: (value: string) => void;
+  vimMode?: boolean;
+  onVimStatus?: (status: VimStatus) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -848,6 +954,8 @@ function BodyEditor({
   onSendRef.current = onSend;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onVimStatusRef = useRef(onVimStatus);
+  onVimStatusRef.current = onVimStatus;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -857,6 +965,7 @@ function BodyEditor({
     const state = EditorState.create({
       doc: existingDoc ?? initialValue ?? "{\n  \n}",
       extensions: [
+        ...(vimMode ? [vim()] : []),
         history(),
         keymap.of(historyKeymap),
         json(),
@@ -898,6 +1007,7 @@ function BodyEditor({
             onChangeRef.current(update.state.doc.toString());
           }
         }),
+        ...(vimMode ? [vimStatusPlugin(onVimStatusRef)] : []),
         EditorView.lineWrapping,
       ],
     });
@@ -909,12 +1019,12 @@ function BodyEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [fields, endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fields, endpoint, vimMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
       ref={containerRef}
-      className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:outline-none"
+      className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-panels]:hidden"
     />
   );
 }

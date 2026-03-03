@@ -15,6 +15,7 @@ import {
 } from "@/page/use-lock-session";
 import { esRequest } from "@/lib/es-client";
 import { loadSavedQueries } from "@/lib/rest-query-storage";
+import { loadGlobalSettings, setVimMode } from "@/lib/global-settings";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 import type { ClusterConfig } from "@/types/cluster";
 
@@ -43,6 +44,13 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   const [spotlightIndices, setSpotlightIndices] = useState<SpotlightIndex[]>([]);
   const [spotlightSavedQueries, setSpotlightSavedQueries] = useState<SavedQuery[]>([]);
   const [spotlightLoading, setSpotlightLoading] = useState(false);
+
+  // Vim mode (global setting)
+  const [vimMode, setVimModeState] = useState(() => loadGlobalSettings().vimModeEnabled);
+  const handleVimModeChange = useCallback((enabled: boolean) => {
+    setVimModeState(enabled);
+    setVimMode(enabled);
+  }, []);
 
   // REST query handoff
   const [pendingRestQuery, setPendingRestQuery] = useState<PendingRestQuery | null>(null);
@@ -277,6 +285,8 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
           <SettingsPage
             clusters={clusters}
             onClustersChange={handleImportClusters}
+            vimMode={vimMode}
+            onVimModeChange={handleVimModeChange}
           />
         ) : !activeCluster ? (
           <div className="flex-1 flex items-center justify-center p-6">
@@ -288,6 +298,8 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
           <DocumentsPage
             cluster={activeCluster}
             indexName={indexName}
+            vimMode={vimMode}
+            onVimModeChange={handleVimModeChange}
           />
         ) : page === "indices" ? (
           <IndicesPage cluster={activeCluster} onNavigateIndex={navigateIndex} />
@@ -296,6 +308,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
             cluster={activeCluster}
             pendingQuery={pendingRestQuery}
             consumePendingQuery={consumePendingRestQuery}
+            vimMode={vimMode}
           />
         ) : (
           <DashboardPage cluster={activeCluster} />

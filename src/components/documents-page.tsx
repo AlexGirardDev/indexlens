@@ -106,11 +106,15 @@ function renderCellValue(value: unknown): string {
 interface DocumentsPageProps {
   cluster: ClusterConfig;
   indexName: string;
+  vimMode?: boolean;
+  onVimModeChange?: (enabled: boolean) => void;
 }
 
 export function DocumentsPage({
   cluster,
   indexName,
+  vimMode,
+  onVimModeChange,
 }: DocumentsPageProps) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -402,6 +406,7 @@ export function DocumentsPage({
             fields={fields}
             onExecute={handleExecuteQuery}
             onChange={(v) => { queryTextRef.current = v; }}
+            vimMode={vimMode}
           />
           <p className="text-xs text-destructive h-4">
             {queryError ?? "\u00A0"}
@@ -415,14 +420,28 @@ export function DocumentsPage({
             placeholder={`${indexName}, ${indexName}-*`}
             onExecute={() => handleExecuteQuery(queryTextRef.current)}
             onChange={setIndexPattern}
+            vimMode={vimMode}
           />
-          <p className="text-xs text-muted-foreground h-4">
-            {patternMatchCount !== null
-              ? patternMatchCount === 0
-                ? "No matching indices"
-                : `${patternMatchCount} matching ${patternMatchCount === 1 ? "index" : "indices"}`
-              : "\u00A0"}
-          </p>
+          <div className="flex items-center justify-between h-4">
+            <p className="text-xs text-muted-foreground">
+              {patternMatchCount !== null
+                ? patternMatchCount === 0
+                  ? "No matching indices"
+                  : `${patternMatchCount} matching ${patternMatchCount === 1 ? "index" : "indices"}`
+                : "\u00A0"}
+            </p>
+            {onVimModeChange && (
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vimMode ?? false}
+                  onChange={(e) => onVimModeChange(e.target.checked)}
+                  className="size-3.5 rounded border-input accent-primary"
+                />
+                <span className="text-xs text-muted-foreground">Vim mode</span>
+              </label>
+            )}
+          </div>
         </div>
       </div>
 
