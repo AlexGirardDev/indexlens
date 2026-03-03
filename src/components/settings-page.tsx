@@ -7,6 +7,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -14,15 +23,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { saveCredential, readCredential } from "@/page/use-lock-session";
+import { readCredential } from "@/page/use-lock-session";
 import { loadSavedQueries, saveSavedQueries } from "@/lib/rest-query-storage";
 import {
   buildExportPayload,
+  buildEncryptedExportEnvelope,
+  decryptExportEnvelope,
+  parseEncryptedExportEnvelope,
   parseIndexLensPayload,
   parseElasticvuePayload,
   mergeClusters,
   mergeSavedQueries,
+  type IndexLensEncryptedExportEnvelope,
 } from "@/lib/config-transfer";
+import { validateConfirmation, validatePassphrase } from "@/page/lock-state";
 import type { ClusterConfig } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 
@@ -46,14 +60,30 @@ interface SettingsPageProps {
 export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeChange }: SettingsPageProps) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [exportPassphraseConfirm, setExportPassphraseConfirm] = useState("");
+  const [importPassphrase, setImportPassphrase] = useState("");
+  const [pendingImportEnvelope, setPendingImportEnvelope] = useState<IndexLensEncryptedExportEnvelope | null>(null);
   const indexLensFileRef = useRef<HTMLInputElement>(null);
   const elasticvueFileRef = useRef<HTMLInputElement>(null);
 
   // -----------------------------------------------------------------------
-  // Export IndexLens config (encrypted via vault)
+  // Export IndexLens config (encrypted with transfer passphrase)
   // -----------------------------------------------------------------------
 
-  const handleExport = async () => {
+  const resetExportDialog = () => {
+    setExportPassphrase("");
+    setExportPassphraseConfirm("");
+  };
+
+  const closeExportDialog = () => {
+    setExportDialogOpen(false);
+    resetExportDialog();
+  };
+
+  const handleExport = async (passphrase: string) => {
     setExporting(true);
     try {
       // Load all saved queries for each cluster
@@ -77,31 +107,7 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
       }
 
       const payload = buildExportPayload(vaultClusters, savedQueries);
-
-      // Encrypt via the vault's credential system
-      const plaintext = JSON.stringify(payload);
-      const saveResult = await saveCredential("_export_temp", plaintext);
-      if (!saveResult.ok) {
-        toast.error("Failed to encrypt config for export");
-        return;
-      }
-
-      // Read back the encrypted credential
-      const readResult = await readCredential("_export_temp");
-      if (!readResult.ok || !readResult.data) {
-        toast.error("Failed to read encrypted export");
-        return;
-      }
-
-      // The readResult.data is the decrypted plaintext.
-      // For file export, we encrypt the payload directly as JSON.
-      // We use the vault's credential save/read to prove the user is unlocked.
-      // Export the plaintext payload wrapped in a versioned envelope.
-      const exportEnvelope = {
-        format: "indexlens-export",
-        version: 1,
-        data: payload,
-      };
+      const exportEnvelope = await buildEncryptedExportEnvelope(payload, passphrase);
 
       const blob = new Blob([JSON.stringify(exportEnvelope, null, 2)], {
         type: "application/json",
@@ -114,6 +120,7 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
       URL.revokeObjectURL(url);
 
       toast.success(`Exported ${vaultClusters.length} cluster(s)`);
+      closeExportDialog();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Export failed");
     } finally {
@@ -124,6 +131,16 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
   // -----------------------------------------------------------------------
   // Import IndexLens config
   // -----------------------------------------------------------------------
+
+  const resetImportDialog = () => {
+    setImportPassphrase("");
+  };
+
+  const closeImportDialog = () => {
+    setImportDialogOpen(false);
+    resetImportDialog();
+    setPendingImportEnvelope(null);
+  };
 
   const handleIndexLensImport = async (file: File) => {
     setImporting(true);
@@ -137,18 +154,28 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
         return;
       }
 
-      // Handle the export envelope format
-      let data = parsed;
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        "format" in parsed &&
-        (parsed as Record<string, unknown>).format === "indexlens-export"
-      ) {
-        data = (parsed as Record<string, unknown>).data;
-      }
+      const envelope = parseEncryptedExportEnvelope(parsed);
+      setPendingImportEnvelope(envelope);
+      setImportDialogOpen(true);
+      toast.info("Enter the export passphrase to import this configuration");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImporting(false);
+      if (indexLensFileRef.current) indexLensFileRef.current.value = "";
+    }
+  };
 
-      const result = parseIndexLensPayload(data);
+  const finishIndexLensImport = async (passphrase: string) => {
+    if (!pendingImportEnvelope) {
+      toast.error("No IndexLens import file selected");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const payload = await decryptExportEnvelope(pendingImportEnvelope, passphrase);
+      const result = parseIndexLensPayload(payload);
 
       // Merge clusters
       const { merged: mergedClusters, added: clustersAdded, skipped: clustersSkipped } =
@@ -183,11 +210,12 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
       for (const w of result.warnings) {
         toast.warning(w);
       }
+
+      closeImportDialog();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Import failed");
     } finally {
       setImporting(false);
-      if (indexLensFileRef.current) indexLensFileRef.current.value = "";
     }
   };
 
@@ -253,6 +281,10 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
   // Render
   // -----------------------------------------------------------------------
 
+  const exportValidation = validatePassphrase(exportPassphrase);
+  const exportConfirmValidation = validateConfirmation(exportPassphrase, exportPassphraseConfirm);
+  const importValidation = validatePassphrase(importPassphrase);
+
   return (
     <div className="flex-1 p-6 max-w-2xl mx-auto w-full space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -287,13 +319,13 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
           </CardTitle>
           <CardDescription>
             Download your IndexLens configuration as a JSON file.
-            Includes all cluster connections and saved queries.
+            Includes all cluster connections and saved queries, encrypted with an export passphrase.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={handleExport} disabled={exporting || clusters.length === 0}>
+          <Button onClick={() => setExportDialogOpen(true)} disabled={exporting || clusters.length === 0}>
             <DownloadIcon className="size-4" />
-            {exporting ? "Exporting..." : "Export Config"}
+            {exporting ? "Exporting..." : "Export Encrypted Config"}
           </Button>
           {clusters.length === 0 && (
             <p className="text-sm text-muted-foreground mt-2">
@@ -312,6 +344,7 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
           </CardTitle>
           <CardDescription>
             Import a previously exported IndexLens configuration file.
+            You must provide the passphrase used at export time.
             Duplicate clusters will be skipped automatically.
           </CardDescription>
         </CardHeader>
@@ -377,6 +410,108 @@ export function SettingsPage({ clusters, onClustersChange, vimMode, onVimModeCha
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => {
+        if (!open) closeExportDialog();
+        else setExportDialogOpen(true);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Encrypted Configuration</DialogTitle>
+            <DialogDescription>
+              Enter a passphrase for this export file. You will need this same passphrase to import it later.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleExport(exportPassphrase);
+            }}
+          >
+            <div className="space-y-1">
+              <label htmlFor="export-passphrase" className="text-sm font-medium">Export Passphrase</label>
+              <Input
+                id="export-passphrase"
+                type="password"
+                value={exportPassphrase}
+                onChange={(e) => setExportPassphrase(e.target.value)}
+                placeholder="Enter export passphrase"
+              />
+              {!exportValidation.valid && exportValidation.message && (
+                <p className="text-xs text-destructive">{exportValidation.message}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="export-passphrase-confirm" className="text-sm font-medium">Confirm Passphrase</label>
+              <Input
+                id="export-passphrase-confirm"
+                type="password"
+                value={exportPassphraseConfirm}
+                onChange={(e) => setExportPassphraseConfirm(e.target.value)}
+                placeholder="Re-enter export passphrase"
+              />
+              {!exportConfirmValidation.valid && exportConfirmValidation.message && (
+                <p className="text-xs text-destructive">{exportConfirmValidation.message}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeExportDialog} disabled={exporting}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={exporting || !exportValidation.valid || !exportConfirmValidation.valid}
+              >
+                {exporting ? "Exporting..." : "Export"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importDialogOpen} onOpenChange={(open) => {
+        if (!open) closeImportDialog();
+        else setImportDialogOpen(true);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Encrypted Configuration</DialogTitle>
+            <DialogDescription>
+              Enter the passphrase that was used to create this IndexLens export.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void finishIndexLensImport(importPassphrase);
+            }}
+          >
+            <div className="space-y-1">
+              <label htmlFor="import-passphrase" className="text-sm font-medium">Export Passphrase</label>
+              <Input
+                id="import-passphrase"
+                type="password"
+                value={importPassphrase}
+                onChange={(e) => setImportPassphrase(e.target.value)}
+                placeholder="Enter export passphrase"
+              />
+              {!importValidation.valid && importValidation.message && (
+                <p className="text-xs text-destructive">{importValidation.message}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeImportDialog} disabled={importing}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={importing || !importValidation.valid}>
+                {importing ? "Importing..." : "Import"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

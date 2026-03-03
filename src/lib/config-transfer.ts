@@ -12,6 +12,21 @@ import type { ClusterConfig, AuthConfig } from "@/types/cluster";
 import { CLUSTER_COLORS } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 import { generateId } from "@/lib/rest-query-storage";
+import {
+  clearBuffer,
+  decodeSalt,
+  deriveKey,
+  encodeSalt,
+  encryptPayload,
+  decryptPayload,
+  generateSalt,
+  type EncryptedPayload,
+} from "@/security/crypto";
+import {
+  CONFIG_TRANSFER_KDF_VERSION,
+  CONFIG_TRANSFER_VERSION,
+  PBKDF2_ITERATIONS,
+} from "@/security/constants";
 
 // ---------------------------------------------------------------------------
 // IndexLens export schema
@@ -24,6 +39,22 @@ export interface IndexLensExportPayload {
   exportedAt: string;
   clusters: ClusterConfig[];
   savedQueries: Record<string, SavedQuery[]>;
+}
+
+export const INDEXLENS_ENCRYPTED_EXPORT_FORMAT = "indexlens-export-encrypted";
+
+export interface IndexLensEncryptedExportEnvelope {
+  format: typeof INDEXLENS_ENCRYPTED_EXPORT_FORMAT;
+  version: number;
+  exportedAt: string;
+  kdf: {
+    algorithm: "PBKDF2";
+    hash: "SHA-256";
+    iterations: number;
+    salt: string;
+    version: number;
+  };
+  ciphertext: EncryptedPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +71,182 @@ export function buildExportPayload(
     clusters,
     savedQueries,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Encrypt/decrypt IndexLens transfer envelopes
+// ---------------------------------------------------------------------------
+
+function getImportErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return "Import failed";
+}
+
+export function parseEncryptedExportEnvelope(data: unknown): IndexLensEncryptedExportEnvelope {
+  if (!isRecord(data)) {
+    throw new Error("Invalid IndexLens config: expected an object");
+  }
+
+  if (data.format !== INDEXLENS_ENCRYPTED_EXPORT_FORMAT) {
+    if (data.format === "indexlens-export") {
+      throw new Error("Unencrypted IndexLens exports are no longer supported. Re-export with encryption.");
+    }
+    throw new Error(`Invalid IndexLens export format: ${String(data.format)}`);
+  }
+
+  if (data.version !== CONFIG_TRANSFER_VERSION) {
+    throw new Error(
+      `Unsupported encrypted IndexLens config version: ${String(data.version)} (expected ${CONFIG_TRANSFER_VERSION})`,
+    );
+  }
+
+  if (typeof data.exportedAt !== "string") {
+    throw new Error("Invalid encrypted IndexLens config: missing exportedAt timestamp");
+  }
+
+  const kdf = data.kdf;
+  if (!isRecord(kdf)) {
+    throw new Error("Invalid encrypted IndexLens config: missing kdf metadata");
+  }
+
+  if (kdf.algorithm !== "PBKDF2" || kdf.hash !== "SHA-256") {
+    throw new Error("Unsupported encrypted IndexLens config kdf algorithm");
+  }
+
+  if (kdf.version !== CONFIG_TRANSFER_KDF_VERSION) {
+    throw new Error(
+      `Unsupported encrypted IndexLens config kdf version: ${String(kdf.version)} (expected ${CONFIG_TRANSFER_KDF_VERSION})`,
+    );
+  }
+
+  if (
+    typeof kdf.iterations !== "number"
+    || !Number.isSafeInteger(kdf.iterations)
+    || kdf.iterations <= 0
+  ) {
+    throw new Error("Invalid encrypted IndexLens config: kdf.iterations must be a positive integer");
+  }
+
+  if (typeof kdf.salt !== "string" || kdf.salt.length === 0) {
+    throw new Error("Invalid encrypted IndexLens config: kdf.salt must be a non-empty base64 string");
+  }
+
+  const ciphertext = data.ciphertext;
+  if (!isRecord(ciphertext)) {
+    throw new Error("Invalid encrypted IndexLens config: missing ciphertext envelope");
+  }
+
+  if (ciphertext.v !== CONFIG_TRANSFER_VERSION) {
+    throw new Error(
+      `Unsupported encrypted IndexLens ciphertext version: ${String(ciphertext.v)} (expected ${CONFIG_TRANSFER_VERSION})`,
+    );
+  }
+
+  if (typeof ciphertext.iv !== "string" || ciphertext.iv.length === 0) {
+    throw new Error("Invalid encrypted IndexLens config: ciphertext.iv must be a non-empty base64 string");
+  }
+
+  if (typeof ciphertext.data !== "string" || ciphertext.data.length === 0) {
+    throw new Error("Invalid encrypted IndexLens config: ciphertext.data must be a non-empty base64 string");
+  }
+
+  return {
+    format: INDEXLENS_ENCRYPTED_EXPORT_FORMAT,
+    version: CONFIG_TRANSFER_VERSION,
+    exportedAt: data.exportedAt,
+    kdf: {
+      algorithm: "PBKDF2",
+      hash: "SHA-256",
+      iterations: kdf.iterations,
+      salt: kdf.salt,
+      version: CONFIG_TRANSFER_KDF_VERSION,
+    },
+    ciphertext: {
+      v: CONFIG_TRANSFER_VERSION,
+      iv: ciphertext.iv,
+      data: ciphertext.data,
+    },
+  };
+}
+
+export async function buildEncryptedExportEnvelope(
+  payload: IndexLensExportPayload,
+  passphrase: string,
+): Promise<IndexLensEncryptedExportEnvelope> {
+  if (passphrase.length === 0) {
+    throw new Error("A passphrase is required to export configuration");
+  }
+
+  const salt = generateSalt();
+  try {
+    const key = await deriveKey(passphrase, salt);
+    const ciphertext = await encryptPayload(key, JSON.stringify(payload));
+
+    return {
+      format: INDEXLENS_ENCRYPTED_EXPORT_FORMAT,
+      version: CONFIG_TRANSFER_VERSION,
+      exportedAt: payload.exportedAt,
+      kdf: {
+        algorithm: "PBKDF2",
+        hash: "SHA-256",
+        iterations: PBKDF2_ITERATIONS,
+        salt: encodeSalt(salt),
+        version: CONFIG_TRANSFER_KDF_VERSION,
+      },
+      ciphertext: {
+        v: ciphertext.v,
+        iv: ciphertext.iv,
+        data: ciphertext.data,
+      },
+    };
+  } finally {
+    clearBuffer(salt);
+  }
+}
+
+export async function decryptExportEnvelope(
+  envelope: IndexLensEncryptedExportEnvelope,
+  passphrase: string,
+): Promise<IndexLensExportPayload> {
+  if (passphrase.length === 0) {
+    throw new Error("Passphrase is required to import an encrypted IndexLens configuration");
+  }
+
+  let salt: Uint8Array<ArrayBuffer> | null = null;
+  try {
+    salt = decodeSalt(envelope.kdf.salt);
+    const key = await deriveKey(passphrase, salt, envelope.kdf.iterations);
+    const plaintext = await decryptPayload(key, envelope.ciphertext);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(plaintext);
+    } catch {
+      throw new Error("Invalid encrypted IndexLens config: decrypted payload is not valid JSON");
+    }
+
+    const parsedPayload = parseIndexLensPayload(parsed);
+    return {
+      version: INDEXLENS_EXPORT_VERSION,
+      exportedAt:
+        isRecord(parsed) && typeof parsed.exportedAt === "string"
+          ? parsed.exportedAt
+          : new Date().toISOString(),
+      clusters: parsedPayload.clusters,
+      savedQueries: parsedPayload.savedQueries,
+    };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "OperationError") {
+      throw new Error(
+        "Unable to decrypt IndexLens config. The passphrase is incorrect or the file is corrupted.",
+      );
+    }
+    throw new Error(getImportErrorMessage(error));
+  } finally {
+    if (salt) {
+      clearBuffer(salt);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

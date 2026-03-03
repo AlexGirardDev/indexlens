@@ -10,7 +10,7 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 - **Index & document browser** — View all indices in a cluster, drill into an index to browse its documents, view field mappings, and search with custom queries.
 - **Encrypted credential vault** — Cluster configurations and credentials are encrypted at rest using AES-256-GCM with a passphrase-derived key. Your passphrase is never stored. See [Security Model](#security-model) for details.
 - **Idle auto-lock** — The session automatically locks after 5 minutes of inactivity, wiping the derived key from memory.
-- **Settings & config import/export** — Export your full IndexLens configuration (clusters and saved queries) as a JSON file, and re-import it later. Migrate from Elasticvue by importing its backup file — cluster connections and saved queries are mapped automatically. Duplicate clusters and queries are detected and skipped during import.
+- **Settings & config import/export** — Export your full IndexLens configuration (clusters and saved queries) as an encrypted JSON file using an export passphrase, and re-import it later with that same passphrase. Migrate from Elasticvue by importing its backup file — cluster connections and saved queries are mapped automatically. Duplicate clusters and queries are detected and skipped during import.
 
 ## Screenshots
 

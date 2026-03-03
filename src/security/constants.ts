@@ -1,5 +1,9 @@
 /** Current version tag stored alongside encrypted payloads for future migration. */
 export const VAULT_VERSION = 1;
+/** Transfer file schema version for encrypted IndexLens exports. */
+export const CONFIG_TRANSFER_VERSION = 1;
+/** KDF metadata version for encrypted IndexLens transfer files. */
+export const CONFIG_TRANSFER_KDF_VERSION = 1;
 
 /** PBKDF2 iteration count. High enough for brute-force resistance. */
 export const PBKDF2_ITERATIONS = 600_000;
