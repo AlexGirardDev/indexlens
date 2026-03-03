@@ -31,7 +31,7 @@ interface NavbarProps {
   onLock: () => void;
 }
 
-const NAV_ITEMS: { page: Page; label: string; icon: React.ReactNode }[] = [
+export const NAV_ITEMS: { page: Page; label: string; icon: React.ReactNode }[] = [
   { page: "dashboard", label: "Dashboard", icon: <LayoutDashboardIcon className="size-4" /> },
   { page: "indices", label: "Indices", icon: <ListIcon className="size-4" /> },
   { page: "rest", label: "Rest", icon: <TerminalIcon className="size-4" /> },
