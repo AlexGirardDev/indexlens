@@ -14,7 +14,8 @@
     "default_title": "IndexLens",
     "default_icon": {
       "16": "indexlens-icon-16.png",
-      "32": "indexlens-icon-32.png"
+      "32": "indexlens-icon-32.png",
+      "48": "indexlens-icon-48.png"
     }
   },
   "icons": {

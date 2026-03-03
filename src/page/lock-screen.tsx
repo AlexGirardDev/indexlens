@@ -39,7 +39,7 @@ export function LockScreen({
         <CardTitle className="text-xl">IndexLens is locked</CardTitle>
         <CardDescription>
           Enter your passphrase to unlock and access your Elasticsearch
-          credentials.
+          clusters.
         </CardDescription>
       </CardHeader>
 
