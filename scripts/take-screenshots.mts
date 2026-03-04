@@ -173,42 +173,62 @@ async function main() {
   await page.keyboard.press("Escape"); // dismiss autocomplete
   await sleep(300);
 
-  // 3. Send a match_all first to populate the response panel with real data
+  // 3. Send the match query first to populate the response panel with real data.
+  //    We need to wait for the endpoint debounce (400ms) to settle before the
+  //    BodyEditor's useEffect stabilizes.
+  const query = JSON.stringify({
+    query: {
+      match: {
+        category: "Books"
+      }
+    }
+  }, null, 2);
+
+  const bodyEditor = page.locator(".cm-editor").nth(1);
+
+  // Wait for the endpoint debounce to settle so the body editor is stable
+  await sleep(600);
+
+  // Set the query body via the exposed __cmView and send it
+  await page.evaluate((text) => {
+    const cmEditors = document.querySelectorAll(".cm-editor");
+    const parentEl = cmEditors[1]?.parentElement;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const view = (parentEl as any)?.__cmView;
+    if (view) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+      });
+    }
+  }, query);
+  await sleep(500);
+
   await page.getByRole("button", { name: "Send" }).click();
   await sleep(2000);
 
-  // 4. Build a query through the autocomplete cascade to reach field-level suggestions.
-  //    The body editor starts with "{\n  \n}".
-  const bodyEditor = page.locator(".cm-editor").nth(1);
-  await bodyEditor.click();
-  await sleep(200);
-  await page.keyboard.press("Control+a");
-  await page.keyboard.press("Backspace");
-  await sleep(200);
+  // 4. Now set up the body editor to show field autocomplete suggestions.
+  //    Set the body to a partial query with cursor inside "match": { ... },
+  //    then type "ca" to filter to "category" and "category.keyword".
+  const partialQuery = '{\n  "query": {\n    "match": {\n      \n    }\n  }\n}';
+  // Place cursor on the blank line inside "match" (line 4, after leading spaces)
+  const cursorPos = partialQuery.indexOf("      \n") + 6; // after the 6 spaces on the blank line
 
-  // Build query structure via autocomplete cascade.
-  // selectOnOpen:false means we need ArrowDown to focus an item before Tab accepts.
+  await page.evaluate(({ text, cursor }) => {
+    const cmEditors = document.querySelectorAll(".cm-editor");
+    const parentEl = cmEditors[1]?.parentElement;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const view = (parentEl as any)?.__cmView;
+    if (view) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: cursor },
+      });
+      view.focus();
+    }
+  }, { text: partialQuery, cursor: cursorPos });
+  await sleep(300);
 
-  // Type { → autocomplete shows DSL keywords. Filter to "query".
-  await page.keyboard.type("{", { delay: 50 });
-  await sleep(400);
-  await page.keyboard.type("que", { delay: 60 });
-  await sleep(400);
-  await page.keyboard.press("ArrowDown"); // focus "query"
-  await sleep(100);
-  await page.keyboard.press("Tab");       // accept → "query": { | }
-  await sleep(600);
-
-  // Inside "query", autocomplete cascades → query types. Filter to "match".
-  await page.keyboard.type("mat", { delay: 60 });
-  await sleep(400);
-  await page.keyboard.press("ArrowDown"); // focus "match"
-  await sleep(100);
-  await page.keyboard.press("Tab");       // accept → "match": { | }
-  await sleep(600);
-
-  // Inside "match", autocomplete should show field names from the index mapping.
-  // Type "ca" to filter to "category", showing field-level awareness.
+  // Type "ca" to trigger autocomplete showing field suggestions
   await page.keyboard.type("ca", { delay: 80 });
   await sleep(800);
 
@@ -219,10 +239,6 @@ async function main() {
   await page.screenshot({
     path: path.join(screenshotDir, "rest-console.png"),
   });
-
-  // Dismiss autocomplete for clean state
-  await page.keyboard.press("Escape");
-  await sleep(200);
 
   // ── Scout search screenshot ──────────────────────────────────────────────
   console.log("📸 Scout search...");

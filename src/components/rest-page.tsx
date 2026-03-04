@@ -1203,6 +1203,8 @@ function BodyEditor({
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    // Expose view on DOM for scripting/testing
+    (containerRef.current as unknown as Record<string, unknown>).__cmView = view;
     onViewReady?.(view);
 
     return () => {
