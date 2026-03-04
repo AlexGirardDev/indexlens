@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { EditorView, keymap, lineNumbers, placeholder as cmPlaceholder, ViewPlugin } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Annotation } from "@codemirror/state";
 import { vim, getCM } from "@replit/codemirror-vim";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
-import { foldGutter, indentOnInput, bracketMatching } from "@codemirror/language";
+import { foldGutter, indentOnInput, bracketMatching, indentService, getIndentUnit } from "@codemirror/language";
 import {
   autocompletion,
   acceptCompletion,
@@ -173,6 +173,61 @@ function formatTimestamp(ts: number): string {
     return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   }
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Annotation to mark auto-format transactions so they don't re-trigger. */
+const autoFormatAnnotation = Annotation.define<boolean>();
+
+/**
+ * Map cursor position from unformatted to formatted text by counting
+ * non-whitespace characters before the cursor.
+ */
+function mapCursorToFormatted(oldText: string, newText: string, oldPos: number): number {
+  let nonWsCount = 0;
+  for (let i = 0; i < oldPos && i < oldText.length; i++) {
+    if (!/\s/.test(oldText[i])) nonWsCount++;
+  }
+  let count = 0;
+  for (let i = 0; i < newText.length; i++) {
+    if (!/\s/.test(newText[i])) {
+      count++;
+      if (count === nonWsCount) return i + 1;
+    }
+  }
+  return newText.length;
+}
+
+/**
+ * Compute JSON indentation by counting unmatched brackets before the
+ * given position, skipping brackets inside strings. Works reliably
+ * even when the document contains invalid / in-progress JSON.
+ */
+function jsonBracketIndent(_context: { state: EditorState }, pos: number): number {
+  const state = (_context as { state: EditorState }).state;
+  const doc = state.doc;
+  const line = doc.lineAt(pos);
+  const textBefore = doc.sliceString(0, line.from);
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < textBefore.length; i++) {
+    const ch = textBefore[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+  }
+
+  const lineText = line.text.trimStart();
+  if (lineText.startsWith('}') || lineText.startsWith(']')) {
+    depth = Math.max(0, depth - 1);
+  }
+
+  const unit = getIndentUnit(state);
+  return Math.max(0, depth) * unit;
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1093,8 @@ function BodyEditor({
 
     const existingDoc = viewRef.current?.state.doc.toString();
 
+    let formatTimer: ReturnType<typeof setTimeout> | null = null;
+
     const state = EditorState.create({
       doc: existingDoc ?? initialValue ?? "{\n  \n}",
       extensions: [
@@ -1045,6 +1102,7 @@ function BodyEditor({
         history(),
         keymap.of(historyKeymap),
         json(),
+        indentService.of(jsonBracketIndent),
         linter(jsonParseLinter()),
         lintGutter(),
         cmViewerTheme,
@@ -1105,6 +1163,33 @@ function BodyEditor({
             onChangeRef.current(update.state.doc.toString());
           }
         }),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          // Don't re-trigger on our own format transactions
+          if (update.transactions.some(tr => tr.annotation(autoFormatAnnotation))) return;
+
+          if (formatTimer) clearTimeout(formatTimer);
+          formatTimer = setTimeout(() => {
+            const view = update.view;
+            const text = view.state.doc.toString();
+            try {
+              const parsed = JSON.parse(text);
+              const formatted = JSON.stringify(parsed, null, 2);
+              if (formatted === text) return;
+
+              const cursor = view.state.selection.main.head;
+              const newCursor = mapCursorToFormatted(text, formatted, cursor);
+
+              view.dispatch({
+                changes: { from: 0, to: text.length, insert: formatted },
+                selection: { anchor: Math.min(newCursor, formatted.length) },
+                annotations: autoFormatAnnotation.of(true),
+              });
+            } catch {
+              // Invalid JSON, don't format
+            }
+          }, 400);
+        }),
         ...(vimMode ? [vimStatusPlugin(onVimStatusRef)] : []),
         EditorView.lineWrapping,
       ],
@@ -1115,6 +1200,7 @@ function BodyEditor({
     onViewReady?.(view);
 
     return () => {
+      if (formatTimer) clearTimeout(formatTimer);
       view.destroy();
       viewRef.current = null;
       onViewReady?.(null);
