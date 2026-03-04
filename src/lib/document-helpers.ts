@@ -109,6 +109,23 @@ export function hitKey(hit: { _index: string; _id: string }): string {
  * Build an NDJSON body for the Elasticsearch `_bulk` API to delete the
  * given documents. Includes optimistic concurrency fields when available.
  */
+/**
+ * Extract stable top-level column names from index mapping fields.
+ *
+ * Takes the first path segment of each non-subfield mapping field,
+ * deduplicates, and sorts alphabetically. This mirrors the top-level
+ * keys that `Object.keys(hit._source)` would return.
+ */
+export function topLevelColumnsFromFields(mappingFields: MappingField[]): string[] {
+  const seen = new Set<string>();
+  for (const f of mappingFields) {
+    if (f.isSubfield) continue;
+    const topLevel = f.path.split(".")[0];
+    seen.add(topLevel);
+  }
+  return Array.from(seen).sort();
+}
+
 export function buildBulkDeleteBody(targets: BulkDeleteTarget[]): string {
   const lines: string[] = [];
   for (const t of targets) {

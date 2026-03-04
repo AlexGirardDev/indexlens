@@ -61,6 +61,7 @@ import {
   buildBulkDeleteBody,
   buildEsSortClause,
   resolveSortField,
+  topLevelColumnsFromFields,
   type SortState,
   type SortDir,
 } from "@/lib/document-helpers";
@@ -134,9 +135,12 @@ export function DocumentsPage({
   const [error, setError] = useState<string | null>(null);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [total, setTotal] = useState(0);
-  const [columns, setColumns] = useState<string[]>([]);
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [fields, setFields] = useState<MappingField[]>([]);
+  const columns = useMemo(
+    () => topLevelColumnsFromFields(fields),
+    [fields],
+  );
   const [activeQuery, setActiveQuery] = useState<object>({ match_all: {} });
   const [queryError, setQueryError] = useState<string | null>(null);
   const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null);
@@ -307,17 +311,6 @@ export function DocumentsPage({
 
         setHits(result.hits.hits);
         setTotal(result.hits.total.value);
-
-        // Derive columns from _source fields
-        const fieldSet = new Set<string>();
-        for (const hit of result.hits.hits) {
-          if (hit._source) {
-            for (const key of Object.keys(hit._source)) {
-              fieldSet.add(key);
-            }
-          }
-        }
-        setColumns(Array.from(fieldSet).sort());
       } catch (err) {
         if (signal.aborted) return;
         setError(
@@ -325,7 +318,6 @@ export function DocumentsPage({
         );
         setHits([]);
         setTotal(0);
-        setColumns([]);
       } finally {
         if (!signal.aborted) setLoading(false);
       }

@@ -4,6 +4,7 @@ import {
   buildBulkDeleteBody,
   resolveSortField,
   buildEsSortClause,
+  topLevelColumnsFromFields,
   type SortState,
 } from "./document-helpers";
 import type { MappingField } from "./es-mapping";
@@ -85,6 +86,55 @@ describe("buildBulkDeleteBody", () => {
   it("returns a single trailing newline for empty input", () => {
     const body = buildBulkDeleteBody([]);
     expect(body).toBe("\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// topLevelColumnsFromFields
+// ---------------------------------------------------------------------------
+
+describe("topLevelColumnsFromFields", () => {
+  it("returns sorted top-level field names", () => {
+    const fields: MappingField[] = [
+      { path: "name", type: "text", isSubfield: false },
+      { path: "age", type: "integer", isSubfield: false },
+      { path: "created_at", type: "date", isSubfield: false },
+    ];
+    expect(topLevelColumnsFromFields(fields)).toEqual(["age", "created_at", "name"]);
+  });
+
+  it("excludes subfields", () => {
+    const fields: MappingField[] = [
+      { path: "name", type: "text", isSubfield: false },
+      { path: "name.keyword", type: "keyword", isSubfield: true },
+    ];
+    expect(topLevelColumnsFromFields(fields)).toEqual(["name"]);
+  });
+
+  it("deduplicates nested paths to their top-level segment", () => {
+    const fields: MappingField[] = [
+      { path: "host", type: "object", isSubfield: false },
+      { path: "host.name", type: "keyword", isSubfield: false },
+      { path: "host.ip", type: "ip", isSubfield: false },
+    ];
+    expect(topLevelColumnsFromFields(fields)).toEqual(["host"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(topLevelColumnsFromFields([])).toEqual([]);
+  });
+
+  it("handles a mix of top-level, nested, and subfields", () => {
+    const fields: MappingField[] = [
+      { path: "name", type: "text", isSubfield: false },
+      { path: "name.keyword", type: "keyword", isSubfield: true },
+      { path: "host.name", type: "keyword", isSubfield: false },
+      { path: "host.ip", type: "ip", isSubfield: false },
+      { path: "age", type: "integer", isSubfield: false },
+      { path: "tags", type: "text", isSubfield: false },
+      { path: "tags.raw", type: "keyword", isSubfield: true },
+    ];
+    expect(topLevelColumnsFromFields(fields)).toEqual(["age", "host", "name", "tags"]);
   });
 });
 
