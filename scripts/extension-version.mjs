@@ -40,12 +40,20 @@ async function readPackageVersion(rootDir) {
   return packageJson.version.trim();
 }
 
-export async function resolveExtensionVersion(rootDir = process.cwd()) {
+export async function resolveExtensionVersion(rootDir = process.cwd(), { buildNumber = 0 } = {}) {
   const overrideVersion = process.env.EXTENSION_VERSION?.trim();
   if (overrideVersion) {
     return validateExtensionVersion(overrideVersion, "EXTENSION_VERSION");
   }
 
+  const packageVersion = await readPackageVersion(rootDir);
+  validateExtensionVersion(packageVersion, "package.json version");
+
+  const version = buildNumber > 0 ? `${packageVersion}.${buildNumber}` : `${packageVersion}.0`;
+  return validateExtensionVersion(version, "package.json version + build number");
+}
+
+export async function resolveBaseVersion(rootDir = process.cwd()) {
   const packageVersion = await readPackageVersion(rootDir);
   return validateExtensionVersion(packageVersion, "package.json version");
 }

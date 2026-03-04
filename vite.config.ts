@@ -40,7 +40,11 @@ async function resolveExtensionVersion(rootDir: string): Promise<string> {
     throw new Error(`package.json at ${packageJsonPath} is missing a string "version" field.`)
   }
 
-  return validateExtensionVersion(packageVersion, "package.json version")
+  validateExtensionVersion(packageVersion, "package.json version")
+
+  const buildNumber = parseInt(process.env.BUILD_NUMBER || "0", 10)
+  const version = buildNumber > 0 ? `${packageVersion}.${buildNumber}` : `${packageVersion}.0`
+  return validateExtensionVersion(version, "package.json version + build number")
 }
 
 function manifestPlugin() {

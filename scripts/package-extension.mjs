@@ -4,7 +4,7 @@ import process from "node:process";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
-import { resolveExtensionVersion } from "./extension-version.mjs";
+import { resolveExtensionVersion, resolveBaseVersion } from "./extension-version.mjs";
 
 const rootDir = process.cwd();
 const distDir = path.resolve(rootDir, "dist");
@@ -150,7 +150,8 @@ async function main() {
     throw new Error(`dist/manifest.json must have manifest_version=3. Found: ${manifest.manifest_version}`);
   }
 
-  const version = await resolveExtensionVersion(rootDir);
+  const buildNumber = parseInt(process.env.BUILD_NUMBER || "0", 10);
+  const version = await resolveExtensionVersion(rootDir, { buildNumber });
   if (manifest.version !== version) {
     throw new Error(
       `dist/manifest.json version (${manifest.version}) does not match resolved extension version (${version}). Re-run npm run build:extension.`,
