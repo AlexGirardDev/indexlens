@@ -719,6 +719,134 @@ test.describe("REST body autocomplete", () => {
     // Nested field from orders-2025
     expect(completionText).toContain("customer.email");
   });
+
+  test("large response stays scrollable in response pane without growing request editor", async ({ extensionPage }) => {
+    await extensionPage.route("http://127.0.0.1:9200/**", async (route) => {
+      const req = route.request();
+      const url = req.url();
+
+      if (url.includes("/_cat/indices")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([{ index: "products" }]),
+        });
+        return;
+      }
+
+      if (url.includes("/_cat/aliases")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+        return;
+      }
+
+      if (url.includes("/products/_mapping")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            products: {
+              mappings: {
+                properties: {
+                  title: { type: "text" },
+                  category: { type: "keyword" },
+                },
+              },
+            },
+          }),
+        });
+        return;
+      }
+
+      if (url.endsWith("/products/_search") && req.method() === "POST") {
+        const hits = Array.from({ length: 1500 }, (_, i) => ({
+          _index: "products",
+          _id: String(i),
+          _score: 1,
+          _source: {
+            title: `product-${i}`,
+            description: "x".repeat(150),
+            category: `cat-${i % 20}`,
+          },
+        }));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            took: 2,
+            timed_out: false,
+            hits: {
+              total: { value: hits.length, relation: "eq" },
+              hits,
+            },
+          }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "{}",
+      });
+    });
+
+    // First-run setup
+    await expect(
+      extensionPage.getByRole("heading", { name: /welcome to indexlens/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await extensionPage.getByLabel("Passphrase", { exact: true }).fill(TEST_PASSPHRASE);
+    await extensionPage.getByLabel("Confirm passphrase").fill(TEST_PASSPHRASE);
+    await extensionPage.getByRole("button", { name: /create passphrase/i }).click();
+    await expect(
+      extensionPage.getByRole("button", { name: /lock/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Add a cluster
+    await extensionPage.getByRole("button", { name: /clusters/i }).click();
+    await extensionPage.getByRole("menuitem", { name: /add cluster/i }).click();
+    await extensionPage.getByLabel("Name").fill("Large Response Cluster");
+    await extensionPage.getByLabel("URL").fill("http://127.0.0.1:9200");
+    await extensionPage.getByRole("button", { name: /^add cluster$/i }).click();
+
+    // Navigate to REST page and switch to POST
+    await extensionPage.getByRole("button", { name: /^rest$/i }).click();
+    await extensionPage.getByRole("combobox").click();
+    await extensionPage.getByRole("option", { name: /^POST$/ }).click();
+
+    const endpointEditor = extensionPage.locator(".cm-editor").first();
+    const bodyEditor = extensionPage.locator(".cm-editor").nth(1);
+    const requestPanel = extensionPage.getByTestId("rest-request-panel");
+    const responseViewer = extensionPage.getByTestId("rest-response-viewer");
+    const sendButton = extensionPage.getByRole("button", { name: /^send$/i });
+
+    await endpointEditor.click();
+    await extensionPage.keyboard.press("Control+a");
+    await extensionPage.keyboard.type("/products/_search");
+
+    await bodyEditor.click();
+    await extensionPage.keyboard.press("Control+a");
+    await extensionPage.keyboard.type('{\n  "query": { "match_all": {} }\n}');
+
+    const requestPanelHeightBefore = await requestPanel.evaluate((el) => el.clientHeight);
+
+    await sendButton.click();
+
+    await expect(
+      extensionPage.locator("span").filter({ hasText: /^200 / }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const requestPanelHeightAfter = await requestPanel.evaluate((el) => el.clientHeight);
+    expect(Math.abs(requestPanelHeightAfter - requestPanelHeightBefore)).toBeLessThanOrEqual(2);
+
+    const responseScroller = responseViewer.locator(".cm-scroller");
+    await expect.poll(async () => {
+      return responseScroller.evaluate((el) => el.scrollHeight > el.clientHeight);
+    }).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

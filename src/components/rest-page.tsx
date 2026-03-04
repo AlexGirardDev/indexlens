@@ -453,9 +453,12 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
   }, [loading, error, response]);
 
   return (
-    <div className="flex flex-1 gap-0 h-full">
+    <div className="flex h-full min-h-0 flex-1 gap-0 overflow-hidden">
       {/* Left panel — Request */}
-      <div className="flex-1 flex flex-col p-6 gap-3 border-r min-w-0 overflow-hidden">
+      <div
+        data-testid="rest-request-panel"
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden border-r p-6"
+      >
         {/* Method + Endpoint + Actions */}
         <div className="flex gap-2 items-center">
           <Select value={method} onValueChange={(nextMethod) => setMethod(nextMethod)}>
@@ -572,7 +575,10 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
       </div>
 
       {/* Right panel — Response */}
-      <div className="flex-1 flex flex-col p-6 gap-3 min-w-0 overflow-hidden">
+      <div
+        data-testid="rest-response-panel"
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden p-6"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-sm">
             <span className="text-muted-foreground">Response</span>
@@ -596,7 +602,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
             </Button>
           )}
         </div>
-        <div className="flex-1 overflow-hidden rounded-md border min-h-0">
+        <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border">
           <ResponseViewer value={responseText} />
         </div>
       </div>
@@ -1158,7 +1164,8 @@ function ResponseViewer({ value }: { value: string }) {
   return (
     <div
       ref={containerRef}
-      className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:outline-none"
+      data-testid="rest-response-viewer"
+      className="h-full min-h-0 overflow-hidden [&_.cm-editor]:h-full [&_.cm-editor]:min-h-0 [&_.cm-editor]:outline-none [&_.cm-scroller]:h-full [&_.cm-scroller]:overflow-auto"
     />
   );
 }
