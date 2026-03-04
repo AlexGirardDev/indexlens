@@ -1172,12 +1172,18 @@ function BodyEditor({
           formatTimer = setTimeout(() => {
             const view = update.view;
             const text = view.state.doc.toString();
+
+            // Don't format if cursor is on a blank line — user likely just
+            // pressed Enter inside braces and is about to type.
+            const cursor = view.state.selection.main.head;
+            const cursorLine = view.state.doc.lineAt(cursor);
+            if (cursorLine.text.trim() === '') return;
+
             try {
               const parsed = JSON.parse(text);
               const formatted = JSON.stringify(parsed, null, 2);
               if (formatted === text) return;
 
-              const cursor = view.state.selection.main.head;
               const newCursor = mapCursorToFormatted(text, formatted, cursor);
 
               view.dispatch({
@@ -1251,7 +1257,7 @@ function ResponseViewer({ value }: { value: string }) {
     <div
       ref={containerRef}
       data-testid="rest-response-viewer"
-      className="h-full min-h-0 overflow-hidden [&_.cm-editor]:h-full [&_.cm-editor]:min-h-0 [&_.cm-editor]:outline-none [&_.cm-scroller]:h-full [&_.cm-scroller]:overflow-auto"
+      className="h-full min-h-0 w-full overflow-hidden [&_.cm-editor]:h-full [&_.cm-editor]:min-h-0 [&_.cm-editor]:outline-none [&_.cm-scroller]:h-full [&_.cm-scroller]:overflow-auto"
     />
   );
 }
