@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { json } from "@codemirror/lang-json";
@@ -41,9 +41,39 @@ function buildMetaObject(hit: SearchHit): Record<string, unknown> {
   return meta;
 }
 
+const DEFAULT_WIDTH = 576; // matches max-w-xl (36rem)
+const MIN_WIDTH = 320;
+const MAX_WIDTH_RATIO = 0.8; // 80% of viewport
+
 export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) {
   const [showMeta, setShowMeta] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sheetWidth, setSheetWidth] = useState(DEFAULT_WIDTH);
+  const isDragging = useRef(false);
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const newWidth = window.innerWidth - ev.clientX;
+      const maxWidth = window.innerWidth * MAX_WIDTH_RATIO;
+      setSheetWidth(Math.min(maxWidth, Math.max(MIN_WIDTH, newWidth)));
+    };
+
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   const sourceFormatted = useMemo(
     () => (hit ? JSON.stringify(hit._source, null, 2) : ""),
@@ -67,7 +97,16 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
 
   return (
     <Sheet open={hit !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="sm:max-w-xl w-full flex flex-col p-6">
+      <SheetContent
+        side="right"
+        className="w-full flex flex-col p-6"
+        style={{ width: sheetWidth, maxWidth: sheetWidth }}
+      >
+        {/* Drag handle on the left edge */}
+        <div
+          onMouseDown={handleDragStart}
+          className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/10 transition-colors z-10"
+        />
         <SheetHeader className="p-0">
           <SheetTitle className="font-mono text-sm truncate">
             {hit?._id}
