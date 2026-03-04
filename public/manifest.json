@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IndexLens",
+  "version": "0.0.0",
   "description": "Elasticsearch viewer with encrypted credential storage",
   "permissions": ["storage"],
   "host_permissions": ["http://*/*", "https://*/*"],

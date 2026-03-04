@@ -5,17 +5,17 @@ on:
   push:
     branches:
       - main
+  release:
+    types: [created]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-and-package:
+  build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
-
-    env:
-      BUILD_NUMBER: ${{ github.run_number }}
 
     steps:
       - name: Checkout
@@ -46,24 +46,51 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into package.json
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+
+      - name: Stamp version into manifest.json
+        run: |
+          jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' public/manifest.json > tmp.json
+          mv tmp.json public/manifest.json
+
+      - name: Build extension
+        run: npm run build:extension
+
+      - name: Zip dist
+        run: cd dist && zip -r ../indexlens-v${{ steps.version.outputs.version }}.zip .
+
+      - name: Upload zip to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          TAG="v${VERSION}"
-
-          # Check if tag already exists
-          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "${TAG}"; then
-            echo "Tag ${TAG} already exists — version was not bumped. Skipping release."
-            exit 0
-          fi
-
-          # Zip the dist directory for the release asset
-          cd dist && zip -r ../indexlens-v${VERSION}.zip . && cd ..
-
-          # Create tag and release
-          gh release create "${TAG}" indexlens-v${VERSION}.zip \
-            --title "${TAG}" \
-            --generate-notes
+        run: gh release upload "${{ github.event.release.tag_name }}" "indexlens-v${{ steps.version.outputs.version }}.zip"
