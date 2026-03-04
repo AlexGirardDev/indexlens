@@ -6,8 +6,8 @@ import { IndicesPage } from "@/components/indices-page";
 import { DocumentsPage } from "@/components/documents-page";
 import { RestPage } from "@/components/rest-page";
 import { SettingsPage } from "@/components/settings-page";
-import { SpotlightSearch } from "@/components/spotlight-search";
-import type { SpotlightIndex } from "@/components/spotlight-search";
+import { ScoutSearch } from "@/components/scout-search";
+import type { ScoutIndex } from "@/components/scout-search";
 import { useHashRoute } from "@/hooks/use-hash-route";
 import {
   saveCredential,
@@ -22,7 +22,7 @@ import type { ClusterConfig } from "@/types/cluster";
 const CLUSTERS_CREDENTIAL_ID = "cluster_configs";
 const LAST_CLUSTER_KEY = "indexlens_last_cluster";
 
-/** Shape passed from spotlight selection to RestPage for preloading a query. */
+/** Shape passed from Scout selection to RestPage for preloading a query. */
 export interface PendingRestQuery {
   method: string;
   endpoint: string;
@@ -39,11 +39,11 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   const [editingCluster, setEditingCluster] = useState<ClusterConfig | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
 
-  // Spotlight state
-  const [spotlightOpen, setSpotlightOpen] = useState(false);
-  const [spotlightIndices, setSpotlightIndices] = useState<SpotlightIndex[]>([]);
-  const [spotlightSavedQueries, setSpotlightSavedQueries] = useState<SavedQuery[]>([]);
-  const [spotlightLoading, setSpotlightLoading] = useState(false);
+  // Scout state
+  const [scoutOpen, setScoutOpen] = useState(false);
+  const [scoutIndices, setScoutIndices] = useState<ScoutIndex[]>([]);
+  const [scoutSavedQueries, setScoutSavedQueries] = useState<SavedQuery[]>([]);
+  const [scoutLoading, setScoutLoading] = useState(false);
 
   // Vim mode (global setting)
   const [vimMode, setVimModeState] = useState(() => loadGlobalSettings().vimModeEnabled);
@@ -103,14 +103,14 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   }, []);
 
   // -----------------------------------------------------------------------
-  // Global keyboard shortcuts: Ctrl+Space (Spotlight), Ctrl+L (Lock)
+  // Global keyboard shortcuts: Ctrl+Space (Scout), Ctrl+L (Lock)
   // -----------------------------------------------------------------------
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.code === "Space") {
         e.preventDefault();
-        setSpotlightOpen((prev) => !prev);
+        setScoutOpen((prev) => !prev);
       } else if (e.ctrlKey && e.key === "l") {
         e.preventDefault();
         void onLock();
@@ -121,15 +121,15 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   }, [onLock]);
 
   // -----------------------------------------------------------------------
-  // Spotlight: fetch indices + aliases when opened (or cluster changes)
+  // Scout: fetch indices + aliases when opened (or cluster changes)
   // -----------------------------------------------------------------------
 
   useEffect(() => {
-    if (!spotlightOpen || !activeCluster) {
+    if (!scoutOpen || !activeCluster) {
       return;
     }
 
-    setSpotlightLoading(true);
+    setScoutLoading(true);
     const controller = new AbortController();
 
     Promise.all([
@@ -154,49 +154,49 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
         else aliasMap.set(index, [alias]);
       }
 
-      const items: SpotlightIndex[] = indicesRes
+      const items: ScoutIndex[] = indicesRes
         .filter((r) => !r.index.startsWith("."))
         .map((r) => ({
           name: r.index,
           aliases: aliasMap.get(r.index) ?? [],
         }));
 
-      setSpotlightIndices(items);
-      setSpotlightLoading(false);
+      setScoutIndices(items);
+      setScoutLoading(false);
     });
 
     // Load saved queries synchronously from localStorage
-    setSpotlightSavedQueries(loadSavedQueries(activeCluster.id));
+    setScoutSavedQueries(loadSavedQueries(activeCluster.id));
 
     return () => controller.abort();
-  }, [spotlightOpen, activeCluster]);
+  }, [scoutOpen, activeCluster]);
 
   // -----------------------------------------------------------------------
-  // Spotlight selection handlers
+  // Scout selection handlers
   // -----------------------------------------------------------------------
 
-  const handleSpotlightNavigate = useCallback(
+  const handleScoutNavigate = useCallback(
     (p: import("@/types/cluster").Page) => {
       navigatePage(p);
     },
     [navigatePage],
   );
 
-  const handleSpotlightSelectIndex = useCallback(
+  const handleScoutSelectIndex = useCallback(
     (indexName: string) => {
       navigateIndex(indexName);
     },
     [navigateIndex],
   );
 
-  const handleSpotlightSelectCluster = useCallback(
+  const handleScoutSelectCluster = useCallback(
     (cluster: ClusterConfig) => {
       navigate(cluster.id, page === "indices" ? "dashboard" : page);
     },
     [navigate, page],
   );
 
-  const handleSpotlightSelectSavedQuery = useCallback(
+  const handleScoutSelectSavedQuery = useCallback(
     (query: SavedQuery) => {
       const pending: PendingRestQuery = {
         method: query.method,
@@ -326,17 +326,17 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
         initial={editingCluster}
       />
 
-      <SpotlightSearch
-        open={spotlightOpen}
-        onOpenChange={setSpotlightOpen}
-        onNavigate={handleSpotlightNavigate}
-        onSelectIndex={handleSpotlightSelectIndex}
-        onSelectSavedQuery={handleSpotlightSelectSavedQuery}
-        indices={spotlightIndices}
-        savedQueries={spotlightSavedQueries}
+      <ScoutSearch
+        open={scoutOpen}
+        onOpenChange={setScoutOpen}
+        onNavigate={handleScoutNavigate}
+        onSelectIndex={handleScoutSelectIndex}
+        onSelectSavedQuery={handleScoutSelectSavedQuery}
+        indices={scoutIndices}
+        savedQueries={scoutSavedQueries}
         clusters={clusters.filter((c) => c.id !== activeCluster?.id)}
-        onSelectCluster={handleSpotlightSelectCluster}
-        loading={spotlightLoading}
+        onSelectCluster={handleScoutSelectCluster}
+        loading={scoutLoading}
       />
     </div>
   );

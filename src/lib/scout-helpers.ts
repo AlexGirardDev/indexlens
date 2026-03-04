@@ -1,5 +1,5 @@
 /**
- * Pure helper functions for building and resolving Spotlight search items.
+ * Pure helper functions for building and resolving Scout search items.
  * Extracted so they can be unit-tested without React dependencies.
  */
 
@@ -10,29 +10,29 @@ import type { ClusterConfig, Page } from "@/types/cluster";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SpotlightNavItem {
+export interface ScoutNavItem {
   type: "nav";
   page: Page;
   label: string;
 }
 
-export interface SpotlightIndexItem {
+export interface ScoutIndexItem {
   type: "index";
   name: string;
   aliases: string[];
 }
 
-export interface SpotlightSavedQueryItem {
+export interface ScoutSavedQueryItem {
   type: "saved-query";
   query: SavedQuery;
 }
 
-export interface SpotlightClusterItem {
+export interface ScoutClusterItem {
   type: "cluster";
   cluster: ClusterConfig;
 }
 
-export type SpotlightItem = SpotlightNavItem | SpotlightIndexItem | SpotlightSavedQueryItem | SpotlightClusterItem;
+export type ScoutItem = ScoutNavItem | ScoutIndexItem | ScoutSavedQueryItem | ScoutClusterItem;
 
 // ---------------------------------------------------------------------------
 // Command-mode types & constants
@@ -40,17 +40,17 @@ export type SpotlightItem = SpotlightNavItem | SpotlightIndexItem | SpotlightSav
 
 export const COMMAND_PREFIX = ">";
 
-export interface SpotlightCommand {
+export interface ScoutCommand {
   id: string;
   label: string;
 }
 
-export const SPOTLIGHT_COMMANDS: SpotlightCommand[] = [
+export const SCOUT_COMMANDS: ScoutCommand[] = [
   { id: "select-cluster", label: "Select Cluster" },
 ];
 
 /**
- * Describes the current state of the Spotlight input when parsed for
+ * Describes the current state of the Scout input when parsed for
  * command-mode behaviour.
  *
  * - `mode: "search"` — normal contextual search (no leading `>`).
@@ -60,15 +60,15 @@ export const SPOTLIGHT_COMMANDS: SpotlightCommand[] = [
  *   `> Select Cluster`) and the user is now filtering within that command's
  *   results.
  */
-export type SpotlightInputState =
+export type ScoutInputState =
   | { mode: "search"; search: string }
   | { mode: "command-list"; filter: string }
-  | { mode: "command-active"; command: SpotlightCommand; filter: string };
+  | { mode: "command-active"; command: ScoutCommand; filter: string };
 
 /**
- * Parse raw input text into a `SpotlightInputState`.
+ * Parse raw input text into a `ScoutInputState`.
  */
-export function parseSpotlightInput(raw: string): SpotlightInputState {
+export function parseScoutInput(raw: string): ScoutInputState {
   const trimmed = raw.trimStart();
 
   if (!trimmed.startsWith(COMMAND_PREFIX)) {
@@ -79,7 +79,7 @@ export function parseSpotlightInput(raw: string): SpotlightInputState {
   const afterPrefix = trimmed.slice(1).trimStart();
 
   // Check if any known command matches the beginning of `afterPrefix`
-  for (const cmd of SPOTLIGHT_COMMANDS) {
+  for (const cmd of SCOUT_COMMANDS) {
     if (afterPrefix.toLowerCase().startsWith(cmd.label.toLowerCase())) {
       const rest = afterPrefix.slice(cmd.label.length);
       // The command must be followed by nothing or a space (not a partial word)
@@ -100,9 +100,9 @@ export function parseSpotlightInput(raw: string): SpotlightInputState {
  * Filter the list of available commands by a search term.
  */
 export function filterCommands(
-  commands: SpotlightCommand[],
+  commands: ScoutCommand[],
   filter: string,
-): SpotlightCommand[] {
+): ScoutCommand[] {
   if (!filter) return commands;
   const lower = filter.toLowerCase();
   return commands.filter((cmd) => cmd.label.toLowerCase().includes(lower));
@@ -113,7 +113,7 @@ export function filterCommands(
  * e.g. `"> Select Cluster "` — note the trailing space so the user can
  * start typing a filter immediately.
  */
-export function buildCommandInputValue(command: SpotlightCommand): string {
+export function buildCommandInputValue(command: ScoutCommand): string {
   return `${COMMAND_PREFIX} ${command.label} `;
 }
 
@@ -134,13 +134,13 @@ const NAV_PAGES: { page: Page; label: string }[] = [
   { page: "settings", label: "Settings" },
 ];
 
-export function buildNavItems(): SpotlightNavItem[] {
+export function buildNavItems(): ScoutNavItem[] {
   return NAV_PAGES.map(({ page, label }) => ({ type: "nav", page, label }));
 }
 
 export function buildIndexItems(
   indices: Array<{ name: string; aliases: string[] }>,
-): SpotlightIndexItem[] {
+): ScoutIndexItem[] {
   return indices.map(({ name, aliases }) => ({
     type: "index",
     name,
@@ -148,11 +148,11 @@ export function buildIndexItems(
   }));
 }
 
-export function buildSavedQueryItems(queries: SavedQuery[]): SpotlightSavedQueryItem[] {
+export function buildSavedQueryItems(queries: SavedQuery[]): ScoutSavedQueryItem[] {
   return queries.map((query) => ({ type: "saved-query", query }));
 }
 
-export function buildClusterItems(clusters: ClusterConfig[], activeClusterId: string | null): SpotlightClusterItem[] {
+export function buildClusterItems(clusters: ClusterConfig[], activeClusterId: string | null): ScoutClusterItem[] {
   return clusters
     .filter((c) => c.id !== activeClusterId)
     .map((cluster) => ({ type: "cluster", cluster }));
@@ -165,7 +165,7 @@ export function buildClusterItems(clusters: ClusterConfig[], activeClusterId: st
 /**
  * Resolve a saved query into a REST preload action shape.
  * This is the deterministic mapping used when a user selects a saved query
- * from the spotlight overlay — the app navigates to REST and preloads these
+ * from the Scout overlay — the app navigates to REST and preloads these
  * values into the editors.
  */
 export function resolveRestPreload(query: SavedQuery): RestPreloadAction {
@@ -177,13 +177,13 @@ export function resolveRestPreload(query: SavedQuery): RestPreloadAction {
 }
 
 /**
- * Filter spotlight items against a search term (case-insensitive substring).
+ * Filter Scout items against a search term (case-insensitive substring).
  * Returns the subset of items whose labels/names/keywords contain the term.
  */
-export function filterSpotlightItems(
-  items: SpotlightItem[],
+export function filterScoutItems(
+  items: ScoutItem[],
   search: string,
-): SpotlightItem[] {
+): ScoutItem[] {
   if (!search) return items;
   const lower = search.toLowerCase();
 

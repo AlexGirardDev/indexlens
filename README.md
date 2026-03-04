@@ -4,7 +4,7 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 
 ## Features
 
-- **Spotlight search** — Press `Ctrl+Space` to open a spotlight-style command palette. Search across pages, indices, aliases, and saved queries instantly.
+- **Scout search** — Press `Ctrl+Space` to open a scout-style command palette. Search across pages, indices, aliases, and saved queries instantly.
 - **Keyboard-driven navigation** — Cycle between Dashboard, Indices, REST Console, and Settings pages with `Shift+T`. Lock the session with `Ctrl+L`.
 - **REST Console with intelligent autocomplete** — A full-featured REST client with endpoint autocomplete (index names, ES operations), request body autocomplete (Elasticsearch DSL keywords and field names from index mappings), request history, and saved queries. CodeMirror editors include auto-indentation, bracket matching, and close-bracket completion.
 - **Index & document browser** — View all indices in a cluster, drill into an index to browse its documents, view field mappings, and search with custom queries. The column visibility dropdown includes Select All / Deselect All buttons for quick toggling.
@@ -29,8 +29,8 @@ A Chrome extension for exploring Elasticsearch clusters with encrypted credentia
 ### REST Console
 ![REST Console](docs/screenshots/rest-console.png)
 
-### Spotlight Search
-![Spotlight Search](docs/screenshots/spotlight-search.png)
+### Scout Search
+![Scout Search](docs/screenshots/scout-search.png)
 
 ### Setup Screen
 ![Setup Screen](docs/screenshots/setup-screen.png)
@@ -84,7 +84,7 @@ npm run dev
 
 | Shortcut | Action | Context |
 |---|---|---|
-| `Ctrl+Space` | Toggle spotlight search | Anywhere while unlocked |
+| `Ctrl+Space` | Toggle Scout search | Anywhere while unlocked |
 | `Ctrl+L` | Lock the session | Anywhere while unlocked |
 | `Shift+T` | Cycle to the next page (Dashboard / Indices / REST / Settings) | When focus is not in a text input |
 | `Enter` | Execute request (endpoint editor) | REST Console endpoint field |
@@ -246,7 +246,7 @@ src/
     es-endpoint-method.ts - Smart HTTP method inference from endpoint path
     global-settings.ts  - Global UI settings (vim mode) persisted in localStorage
   components/
-    spotlight-search.tsx - Spotlight command palette (Ctrl+Space)
+    scout-search.tsx - Scout command palette (Ctrl+Space)
     rest-page.tsx        - REST console with autocomplete and history
     query-editor.tsx     - Reusable CodeMirror query editor with vim support
     index-pattern-editor.tsx - Index pattern autocomplete editor

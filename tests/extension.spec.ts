@@ -751,10 +751,10 @@ test.describe("Toolbar icon click", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Spotlight command mode
+// Scout command mode
 // ---------------------------------------------------------------------------
 
-test.describe("Spotlight command mode", () => {
+test.describe("Scout command mode", () => {
   test.beforeEach(async ({ extensionPage }) => {
     // Mock all ES requests to avoid real cluster connections
     await extensionPage.route("http://127.0.0.1:9200/**", async (route) => {
@@ -832,10 +832,10 @@ test.describe("Spotlight command mode", () => {
     await extensionPage.getByRole("button", { name: /^add cluster$/i }).click();
   });
 
-  test("clusters are not shown in default spotlight results", async ({ extensionPage }) => {
+  test("clusters are not shown in default Scout results", async ({ extensionPage }) => {
     await extensionPage.keyboard.press("Control+Space");
 
-    // Spotlight should be open
+    // Scout should be open
     const dialog = extensionPage.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
@@ -845,7 +845,7 @@ test.describe("Spotlight command mode", () => {
     // Clusters should NOT appear in default results
     await expect(dialog.getByText("Cluster Beta")).not.toBeVisible();
 
-    // Close spotlight
+    // Close Scout
     await extensionPage.keyboard.press("Escape");
   });
 
@@ -867,7 +867,7 @@ test.describe("Spotlight command mode", () => {
     await extensionPage.keyboard.press("Escape");
   });
 
-  test("selecting Select Cluster command shows cluster list and selecting a cluster switches to it", async ({ extensionPage }) => {
+  test("selecting Select Cluster command shows cluster list and switches cluster", async ({ extensionPage }) => {
     await extensionPage.keyboard.press("Control+Space");
     const dialog = extensionPage.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
@@ -888,7 +888,7 @@ test.describe("Spotlight command mode", () => {
     // Select the cluster
     await extensionPage.keyboard.press("Enter");
 
-    // Spotlight should close
+    // Scout should close
     await expect(dialog).not.toBeVisible({ timeout: 5_000 });
 
     // Cluster Beta should now be active in the navbar
@@ -922,7 +922,7 @@ test.describe("Spotlight command mode", () => {
     await extensionPage.keyboard.press("Escape");
   });
 
-  test("removing > exits command mode back to normal results", async ({ extensionPage }) => {
+  test("removing > exits command mode and returns to normal results", async ({ extensionPage }) => {
     await extensionPage.keyboard.press("Control+Space");
     const dialog = extensionPage.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
@@ -945,10 +945,10 @@ test.describe("Spotlight command mode", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Ctrl+Space spotlight hotkey in Vim normal mode
+// Ctrl+Space Scout hotkey in Vim normal mode
 // ---------------------------------------------------------------------------
 
-test.describe("Spotlight hotkey with Vim mode", () => {
+test.describe("Scout hotkey with Vim mode", () => {
   test.beforeEach(async ({ extensionPage }) => {
     // Mock ES requests
     await extensionPage.route("http://127.0.0.1:9200/**", async (route) => {
@@ -999,7 +999,7 @@ test.describe("Spotlight hotkey with Vim mode", () => {
     await extensionPage.getByRole("button", { name: /^rest$/i }).click();
   });
 
-  test("Ctrl+Space opens spotlight when CodeMirror Vim is in normal mode", async ({ extensionPage }) => {
+  test("Ctrl+Space opens Scout when CodeMirror Vim is in normal mode", async ({ extensionPage }) => {
     // Enable Vim mode via the checkbox on the REST page
     const vimCheckbox = extensionPage.locator("label").filter({ hasText: "Vim mode" }).locator("input[type='checkbox']");
     await vimCheckbox.check();
@@ -1015,18 +1015,18 @@ test.describe("Spotlight hotkey with Vim mode", () => {
     // Verify we are in normal mode by checking the Vim status bar
     await expect(extensionPage.getByText("NORMAL")).toBeVisible({ timeout: 3_000 });
 
-    // Press Ctrl+Space — this should open spotlight despite Vim normal mode
+    // Press Ctrl+Space — this should open Scout despite Vim normal mode
     await extensionPage.keyboard.press("Control+Space");
 
     const dialog = extensionPage.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // Close spotlight
+    // Close Scout
     await extensionPage.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible({ timeout: 5_000 });
   });
 
-  test("Ctrl+Space opens spotlight from Vim normal mode in body editor", async ({ extensionPage }) => {
+  test("Ctrl+Space opens Scout from Vim normal mode in body editor", async ({ extensionPage }) => {
     // Enable Vim mode
     const vimCheckbox = extensionPage.locator("label").filter({ hasText: "Vim mode" }).locator("input[type='checkbox']");
     await vimCheckbox.check();
@@ -1044,7 +1044,7 @@ test.describe("Spotlight hotkey with Vim mode", () => {
 
     await expect(extensionPage.getByText("NORMAL")).toBeVisible({ timeout: 3_000 });
 
-    // Press Ctrl+Space — should open spotlight
+    // Press Ctrl+Space — should open Scout
     await extensionPage.keyboard.press("Control+Space");
 
     const dialog = extensionPage.getByRole("dialog");

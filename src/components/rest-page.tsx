@@ -401,7 +401,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
     [],
   );
 
-  // Consume pending query from spotlight selection (one-time)
+  // Consume pending query from Scout selection (one-time)
   useEffect(() => {
     if (pendingQuery && consumePendingQuery) {
       const q = consumePendingQuery();

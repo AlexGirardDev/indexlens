@@ -20,29 +20,29 @@ import {
 import type { ClusterConfig, Page } from "@/types/cluster";
 import type { SavedQuery } from "@/lib/rest-query-storage";
 import {
-  parseSpotlightInput,
+  parseScoutInput,
   filterCommands,
   buildCommandInputValue,
-  SPOTLIGHT_COMMANDS,
-  type SpotlightCommand,
-} from "@/lib/spotlight-helpers";
+  SCOUT_COMMANDS,
+  type ScoutCommand,
+} from "@/lib/scout-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SpotlightIndex {
+export interface ScoutIndex {
   name: string;
   aliases: string[];
 }
 
-export interface SpotlightProps {
+export interface ScoutProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate: (page: Page) => void;
   onSelectIndex: (indexName: string) => void;
   onSelectSavedQuery: (query: SavedQuery) => void;
-  indices: SpotlightIndex[];
+  indices: ScoutIndex[];
   savedQueries: SavedQuery[];
   clusters: ClusterConfig[];
   onSelectCluster: (cluster: ClusterConfig) => void;
@@ -64,7 +64,7 @@ const NAV_ITEMS: { page: Page; label: string; icon: React.ReactNode; shortcut?: 
 // Component
 // ---------------------------------------------------------------------------
 
-export function SpotlightSearch({
+export function ScoutSearch({
   open,
   onOpenChange,
   onNavigate,
@@ -75,7 +75,7 @@ export function SpotlightSearch({
   clusters,
   onSelectCluster,
   loading,
-}: SpotlightProps) {
+}: ScoutProps) {
   const [inputValue, setInputValue] = useState("");
 
   // Reset input when dialog closes
@@ -85,7 +85,7 @@ export function SpotlightSearch({
     }
   }, [open]);
 
-  const inputState = useMemo(() => parseSpotlightInput(inputValue), [inputValue]);
+  const inputState = useMemo(() => parseScoutInput(inputValue), [inputValue]);
 
   const isCommandMode = inputState.mode !== "search";
 
@@ -98,7 +98,7 @@ export function SpotlightSearch({
   );
 
   const handleSelectCommand = useCallback(
-    (command: SpotlightCommand) => {
+    (command: ScoutCommand) => {
       setInputValue(buildCommandInputValue(command));
     },
     [],
@@ -121,14 +121,14 @@ export function SpotlightSearch({
   // Filter commands when in command-list mode
   const filteredCommandList = useMemo(() => {
     if (inputState.mode !== "command-list") return [];
-    return filterCommands(SPOTLIGHT_COMMANDS, inputState.filter);
+    return filterCommands(SCOUT_COMMANDS, inputState.filter);
   }, [inputState]);
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Spotlight Search"
+      title="Scout Search"
       description="Search for pages, indices, saved queries, and commands"
       showCloseButton={false}
       shouldFilter={!isCommandMode}

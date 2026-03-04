@@ -5,13 +5,13 @@ import {
   buildSavedQueryItems,
   buildClusterItems,
   resolveRestPreload,
-  filterSpotlightItems,
-  parseSpotlightInput,
+  filterScoutItems,
+  parseScoutInput,
   filterCommands,
   buildCommandInputValue,
-  SPOTLIGHT_COMMANDS,
-} from "./spotlight-helpers";
-import type { SpotlightItem } from "./spotlight-helpers";
+  SCOUT_COMMANDS,
+} from "./scout-helpers";
+import type { ScoutItem } from "./scout-helpers";
 import type { SavedQuery } from "./rest-query-storage";
 import type { ClusterConfig } from "@/types/cluster";
 
@@ -61,7 +61,7 @@ describe("buildNavItems", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildIndexItems", () => {
-  it("maps raw indices to spotlight items", () => {
+  it("maps raw indices to scout items", () => {
     const items = buildIndexItems([
       { name: "logs-2024", aliases: ["logs"] },
       { name: "metrics", aliases: [] },
@@ -85,7 +85,7 @@ describe("buildIndexItems", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildSavedQueryItems", () => {
-  it("wraps saved queries in spotlight items", () => {
+  it("wraps saved queries in scout items", () => {
     const query = makeSavedQuery();
     const items = buildSavedQueryItems([query]);
     expect(items).toHaveLength(1);
@@ -156,11 +156,11 @@ describe("resolveRestPreload", () => {
 });
 
 // ---------------------------------------------------------------------------
-// filterSpotlightItems
+// filterScoutItems
 // ---------------------------------------------------------------------------
 
-describe("filterSpotlightItems", () => {
-  const allItems: SpotlightItem[] = [
+describe("filterScoutItems", () => {
+  const allItems: ScoutItem[] = [
     ...buildNavItems(),
     ...buildIndexItems([
       { name: "logs-2024", aliases: ["current-logs"] },
@@ -180,11 +180,11 @@ describe("filterSpotlightItems", () => {
   ];
 
   it("returns all items when search is empty", () => {
-    expect(filterSpotlightItems(allItems, "")).toEqual(allItems);
+    expect(filterScoutItems(allItems, "")).toEqual(allItems);
   });
 
   it("filters nav items by label", () => {
-    const result = filterSpotlightItems(allItems, "dash");
+    const result = filterScoutItems(allItems, "dash");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("nav");
     if (result[0].type === "nav") {
@@ -193,13 +193,13 @@ describe("filterSpotlightItems", () => {
   });
 
   it("filters index items by name", () => {
-    const result = filterSpotlightItems(allItems, "metrics");
+    const result = filterScoutItems(allItems, "metrics");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("index");
   });
 
   it("filters index items by alias", () => {
-    const result = filterSpotlightItems(allItems, "current-logs");
+    const result = filterScoutItems(allItems, "current-logs");
     expect(result).toHaveLength(1);
     if (result[0].type === "index") {
       expect(result[0].name).toBe("logs-2024");
@@ -207,13 +207,13 @@ describe("filterSpotlightItems", () => {
   });
 
   it("filters saved queries by name", () => {
-    const result = filterSpotlightItems(allItems, "Health");
+    const result = filterScoutItems(allItems, "Health");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("saved-query");
   });
 
   it("filters saved queries by endpoint", () => {
-    const result = filterSpotlightItems(allItems, "_cluster");
+    const result = filterScoutItems(allItems, "_cluster");
     expect(result).toHaveLength(1);
     if (result[0].type === "saved-query") {
       expect(result[0].query.name).toBe("Health Check");
@@ -221,13 +221,13 @@ describe("filterSpotlightItems", () => {
   });
 
   it("is case insensitive", () => {
-    const result = filterSpotlightItems(allItems, "LOGS");
+    const result = filterScoutItems(allItems, "LOGS");
     // Should match index "logs-2024", alias "current-logs", and saved query "Search Logs" / endpoint "/logs-2024/_search"
     expect(result.length).toBeGreaterThanOrEqual(2);
   });
 
   it("filters settings nav item by label", () => {
-    const result = filterSpotlightItems(allItems, "settings");
+    const result = filterScoutItems(allItems, "settings");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("nav");
     if (result[0].type === "nav") {
@@ -236,7 +236,7 @@ describe("filterSpotlightItems", () => {
   });
 
   it("filters cluster items by name", () => {
-    const result = filterSpotlightItems(allItems, "Staging");
+    const result = filterScoutItems(allItems, "Staging");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("cluster");
     if (result[0].type === "cluster") {
@@ -245,7 +245,7 @@ describe("filterSpotlightItems", () => {
   });
 
   it("filters cluster items by URL", () => {
-    const result = filterSpotlightItems(allItems, "es-prod");
+    const result = filterScoutItems(allItems, "es-prod");
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("cluster");
     if (result[0].type === "cluster") {
@@ -254,80 +254,80 @@ describe("filterSpotlightItems", () => {
   });
 
   it("returns empty when nothing matches", () => {
-    const result = filterSpotlightItems(allItems, "zzz-nonexistent");
+    const result = filterScoutItems(allItems, "zzz-nonexistent");
     expect(result).toEqual([]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// parseSpotlightInput
+// parseScoutInput
 // ---------------------------------------------------------------------------
 
-describe("parseSpotlightInput", () => {
+describe("parseScoutInput", () => {
   it("returns search mode for normal text", () => {
-    const state = parseSpotlightInput("dashboard");
+    const state = parseScoutInput("dashboard");
     expect(state).toEqual({ mode: "search", search: "dashboard" });
   });
 
   it("returns search mode for empty string", () => {
-    const state = parseSpotlightInput("");
+    const state = parseScoutInput("");
     expect(state).toEqual({ mode: "search", search: "" });
   });
 
   it("returns command-list mode for just '>'", () => {
-    const state = parseSpotlightInput(">");
+    const state = parseScoutInput(">");
     expect(state).toEqual({ mode: "command-list", filter: "" });
   });
 
   it("returns command-list mode for '> ' (with space)", () => {
-    const state = parseSpotlightInput("> ");
+    const state = parseScoutInput("> ");
     expect(state).toEqual({ mode: "command-list", filter: "" });
   });
 
   it("returns command-list mode with filter for partial command text", () => {
-    const state = parseSpotlightInput("> Sel");
+    const state = parseScoutInput("> Sel");
     expect(state).toEqual({ mode: "command-list", filter: "Sel" });
   });
 
   it("returns command-list mode for unrecognized command text", () => {
-    const state = parseSpotlightInput("> Unknown Command");
+    const state = parseScoutInput("> Unknown Command");
     expect(state).toEqual({ mode: "command-list", filter: "Unknown Command" });
   });
 
   it("returns command-active mode for '> Select Cluster'", () => {
-    const state = parseSpotlightInput("> Select Cluster");
+    const state = parseScoutInput("> Select Cluster");
     expect(state).toEqual({
       mode: "command-active",
-      command: SPOTLIGHT_COMMANDS[0],
+      command: SCOUT_COMMANDS[0],
       filter: "",
     });
   });
 
   it("returns command-active mode for '> Select Cluster ' (with trailing space)", () => {
-    const state = parseSpotlightInput("> Select Cluster ");
+    const state = parseScoutInput("> Select Cluster ");
     expect(state).toEqual({
       mode: "command-active",
-      command: SPOTLIGHT_COMMANDS[0],
+      command: SCOUT_COMMANDS[0],
       filter: "",
     });
   });
 
   it("returns command-active mode with filter for '> Select Cluster prod'", () => {
-    const state = parseSpotlightInput("> Select Cluster prod");
+    const state = parseScoutInput("> Select Cluster prod");
     expect(state).toEqual({
       mode: "command-active",
-      command: SPOTLIGHT_COMMANDS[0],
+      command: SCOUT_COMMANDS[0],
       filter: "prod",
     });
   });
 
   it("is case-insensitive for command matching", () => {
-    const state = parseSpotlightInput("> select cluster");
+    const state = parseScoutInput("> select cluster");
     expect(state.mode).toBe("command-active");
   });
 
   it("handles leading whitespace before '>'", () => {
-    const state = parseSpotlightInput("  > ");
+    const state = parseScoutInput("  > ");
     expect(state).toEqual({ mode: "command-list", filter: "" });
   });
 });
@@ -338,23 +338,23 @@ describe("parseSpotlightInput", () => {
 
 describe("filterCommands", () => {
   it("returns all commands when filter is empty", () => {
-    const result = filterCommands(SPOTLIGHT_COMMANDS, "");
-    expect(result).toEqual(SPOTLIGHT_COMMANDS);
+    const result = filterCommands(SCOUT_COMMANDS, "");
+    expect(result).toEqual(SCOUT_COMMANDS);
   });
 
   it("filters commands by label substring", () => {
-    const result = filterCommands(SPOTLIGHT_COMMANDS, "cluster");
+    const result = filterCommands(SCOUT_COMMANDS, "cluster");
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("select-cluster");
   });
 
   it("is case-insensitive", () => {
-    const result = filterCommands(SPOTLIGHT_COMMANDS, "SELECT");
+    const result = filterCommands(SCOUT_COMMANDS, "SELECT");
     expect(result).toHaveLength(1);
   });
 
   it("returns empty when nothing matches", () => {
-    const result = filterCommands(SPOTLIGHT_COMMANDS, "zzz");
+    const result = filterCommands(SCOUT_COMMANDS, "zzz");
     expect(result).toEqual([]);
   });
 });
@@ -365,7 +365,7 @@ describe("filterCommands", () => {
 
 describe("buildCommandInputValue", () => {
   it("builds '> Select Cluster ' for the Select Cluster command", () => {
-    const value = buildCommandInputValue(SPOTLIGHT_COMMANDS[0]);
+    const value = buildCommandInputValue(SCOUT_COMMANDS[0]);
     expect(value).toBe("> Select Cluster ");
   });
 

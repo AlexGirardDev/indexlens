@@ -224,15 +224,15 @@ async function main() {
   await page.keyboard.press("Escape");
   await sleep(200);
 
-  // ── Spotlight search screenshot ───────────────────────────────────────────
-  console.log("📸 Spotlight search...");
-  // Move focus out of CodeMirror before opening spotlight
+  // ── Scout search screenshot ──────────────────────────────────────────────
+  console.log("📸 Scout search...");
+  // Move focus out of CodeMirror before opening Scout
   await page.getByRole("button", { name: "Dashboard" }).click();
   await sleep(500);
   await page.keyboard.press("Control+Space");
   await sleep(800);
   await page.screenshot({
-    path: path.join(screenshotDir, "spotlight-search.png"),
+    path: path.join(screenshotDir, "scout-search.png"),
   });
   await page.keyboard.press("Escape");
 
