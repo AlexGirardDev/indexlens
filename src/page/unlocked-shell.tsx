@@ -271,7 +271,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
   }
 
   return (
-    <div className="flex flex-col w-full min-h-screen">
+    <div className="flex h-screen w-full flex-col overflow-hidden">
       <Navbar
         clusters={clusters}
         activeCluster={activeCluster}
@@ -283,7 +283,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
         onLock={onLock}
       />
 
-      <main className="flex-1 flex flex-col">
+      <main className="flex min-h-0 flex-1 flex-col">
         {page === "settings" ? (
           <SettingsPage
             clusters={clusters}

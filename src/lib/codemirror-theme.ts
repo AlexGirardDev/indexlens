@@ -113,6 +113,7 @@ const viewerTheme = EditorView.theme({
     color: fg,
     fontSize: "13px",
     height: "100%",
+    minHeight: "0",
   },
   "&.cm-focused": {
     outline: "none",
@@ -149,6 +150,7 @@ const viewerTheme = EditorView.theme({
   },
   ".cm-scroller": {
     overflow: "auto",
+    maxHeight: "100%",
   },
   ".cm-matchingBracket": {
     backgroundColor: currentLine,
