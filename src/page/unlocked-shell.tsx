@@ -299,6 +299,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
           </div>
         ) : page === "indices" && indexName ? (
           <DocumentsPage
+            key={indexName}
             cluster={activeCluster}
             indexName={indexName}
             vimMode={vimMode}
