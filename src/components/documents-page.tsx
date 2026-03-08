@@ -3,6 +3,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns3Icon,
+  DownloadIcon,
   Trash2Icon,
   Loader2Icon,
   ArrowUpIcon,
@@ -65,6 +66,12 @@ import {
   type SortState,
   type SortDir,
 } from "@/lib/document-helpers";
+import {
+  exportDocuments,
+  encodeIndexPattern,
+  type ExportFormat,
+  type ExportProgress,
+} from "@/lib/export-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,13 +105,6 @@ const numFmt = new Intl.NumberFormat();
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function encodeIndexPattern(pattern: string): string {
-  return pattern
-    .split(",")
-    .map((p) => encodeURIComponent(p.trim()).replace(/%2A/g, "*"))
-    .join(",");
-}
 
 function renderCellValue(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -156,6 +156,7 @@ export function DocumentsPage({
   // Selection state – keys are hitKey(hit) = `_index\0_id`
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Clear selection when data, page, query, or target changes
   useEffect(() => {
@@ -419,33 +420,39 @@ export function DocumentsPage({
           )}
         </div>
 
-        {columns.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Columns3Icon className="size-4" />
-                Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
-              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={selectAllColumns}>Select all</DropdownMenuItem>
-              <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={deselectAllColumns}>Deselect all</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {columns.map((col) => (
-                <DropdownMenuCheckboxItem
-                  key={col}
-                  checked={!hiddenColumns.has(col)}
-                  onCheckedChange={() => toggleColumn(col)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {col}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)}>
+            <DownloadIcon className="size-4" />
+            Export
+          </Button>
+          {columns.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Columns3Icon className="size-4" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+                <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={selectAllColumns}>Select all</DropdownMenuItem>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={deselectAllColumns}>Deselect all</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {columns.map((col) => (
+                  <DropdownMenuCheckboxItem
+                    key={col}
+                    checked={!hiddenColumns.has(col)}
+                    onCheckedChange={() => toggleColumn(col)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {col}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {/* Query + Index Pattern */}
@@ -697,6 +704,16 @@ export function DocumentsPage({
         }}
       />
 
+      <ExportDocumentsDialog
+        open={exportDialogOpen}
+        cluster={cluster}
+        indexPattern={activeTarget}
+        query={activeQuery}
+        sort={sort}
+        fields={fields}
+        onClose={() => setExportDialogOpen(false)}
+      />
+
       <DocumentViewerSheet
         hit={selectedHit}
         onClose={() => setSelectedHit(null)}
@@ -841,6 +858,139 @@ function BulkDeleteDocumentsDialog({
             {submitting && <Loader2Icon className="size-4 mr-1 animate-spin" />}
             Delete Documents
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Export documents dialog
+// ---------------------------------------------------------------------------
+
+function ExportDocumentsDialog({
+  open,
+  cluster,
+  indexPattern,
+  query,
+  sort,
+  fields,
+  onClose,
+}: {
+  open: boolean;
+  cluster: ClusterConfig;
+  indexPattern: string;
+  query: object;
+  sort: SortState | null;
+  fields: MappingField[];
+  onClose: () => void;
+}) {
+  const [format, setFormat] = useState<ExportFormat>("jsonl");
+  const [exporting, setExporting] = useState(false);
+  const [progress, setProgress] = useState<ExportProgress>({ exported: 0, total: 0 });
+  const abortRef = useRef<AbortController | null>(null);
+  const exportedRef = useRef(0);
+
+  const handleExport = async () => {
+    setExporting(true);
+    setProgress({ exported: 0, total: 0 });
+    exportedRef.current = 0;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const sortClause = buildEsSortClause(sort, fields);
+      await exportDocuments({
+        cluster,
+        indexPattern,
+        query,
+        sort: sortClause,
+        format,
+        onProgress: (p) => { setProgress(p); exportedRef.current = p.exported; },
+        signal: controller.signal,
+      });
+      toast.success(`Exported ${numFmt.format(exportedRef.current)} documents`);
+      onClose();
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // user cancelled — silently close
+      } else {
+        toast.error(err instanceof Error ? err.message : "Export failed");
+      }
+    } finally {
+      setExporting(false);
+      abortRef.current = null;
+    }
+  };
+
+  const handleCancel = () => {
+    if (exporting) {
+      abortRef.current?.abort();
+    } else {
+      onClose();
+    }
+  };
+
+  const pct = progress.total > 0 ? Math.round((progress.exported / progress.total) * 100) : 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o && !exporting) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Export Documents</DialogTitle>
+          <DialogDescription>
+            Export all documents matching the current query.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Format</label>
+            <div className="flex gap-2">
+              <Button
+                variant={format === "jsonl" ? "default" : "outline"}
+                size="sm"
+                onClick={() => !exporting && setFormat("jsonl")}
+                disabled={exporting}
+              >
+                JSONL
+              </Button>
+              <Button
+                variant={format === "json-array" ? "default" : "outline"}
+                size="sm"
+                onClick={() => !exporting && setFormat("json-array")}
+                disabled={exporting}
+              >
+                JSON Array
+              </Button>
+            </div>
+          </div>
+
+          {exporting && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                Exporting... {numFmt.format(progress.exported)} / {numFmt.format(progress.total)} documents
+              </p>
+              <div className="h-2 rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: pct + "%" }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleCancel}>
+            {exporting ? "Cancel" : "Close"}
+          </Button>
+          {!exporting && (
+            <Button onClick={handleExport}>
+              <DownloadIcon className="size-4 mr-1" />
+              Export
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
