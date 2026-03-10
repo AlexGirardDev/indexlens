@@ -1,5 +1,6 @@
-import type { EditorView } from "@codemirror/view";
-import { EditorView as CmEditorView } from "@codemirror/view";
+import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView as CmEditorView, ViewPlugin } from "@codemirror/view";
+import { RangeSetBuilder } from "@codemirror/state";
 import {
   SearchQuery,
   findNext,
@@ -27,9 +28,61 @@ function buildQuery(query: string): SearchQuery {
   return new SearchQuery({ search: query });
 }
 
+const searchMatchMark = Decoration.mark({ class: "cm-searchMatch" });
+const selectedSearchMatchMark = Decoration.mark({
+  class: "cm-searchMatch cm-searchMatch-selected",
+});
+
+function collectSearchDecorations(view: EditorView): DecorationSet {
+  const query = getSearchQuery(view.state);
+  if (!query.valid || !query.search) return Decoration.none;
+
+  const cursor = query.getCursor(view.state.doc);
+  const builder = new RangeSetBuilder<Decoration>();
+  const selectedRanges = view.state.selection.ranges;
+
+  for (let next = cursor.next(); !next.done; next = cursor.next()) {
+    const { from, to } = next.value;
+    const isSelected = selectedRanges.some((range) => range.from === from && range.to === to);
+    builder.add(from, to, isSelected ? selectedSearchMatchMark : searchMatchMark);
+  }
+
+  return builder.finish();
+}
+
+const viewerSearchDecorations = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+
+  constructor(view: EditorView) {
+    this.decorations = collectSearchDecorations(view);
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.selectionSet) {
+      this.decorations = collectSearchDecorations(update.view);
+      return;
+    }
+
+    const prevQuery = getSearchQuery(update.startState);
+    const nextQuery = getSearchQuery(update.state);
+    if (
+      prevQuery.search !== nextQuery.search ||
+      prevQuery.caseSensitive !== nextQuery.caseSensitive ||
+      prevQuery.literal !== nextQuery.literal ||
+      prevQuery.regexp !== nextQuery.regexp ||
+      prevQuery.wholeWord !== nextQuery.wholeWord
+    ) {
+      this.decorations = collectSearchDecorations(update.view);
+    }
+  }
+}, {
+  decorations: (value) => value.decorations,
+});
+
 export function createViewerSearchExtensions(onUpdate: (view: EditorView) => void) {
   return [
     search({ top: false }),
+    viewerSearchDecorations,
     CmEditorView.updateListener.of((update) => {
       if (
         update.docChanged ||

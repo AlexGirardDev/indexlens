@@ -161,7 +161,7 @@ const viewerTheme = EditorView.theme({
     outline: `1px solid rgba(241, 250, 140, 0.48)`,
     borderRadius: "2px",
   },
-  ".cm-searchMatch.cm-searchMatch-selected": {
+  ".cm-searchMatch.cm-searchMatch-selected, .cm-searchMatch-selected": {
     backgroundColor: "rgba(255, 184, 108, 0.32)",
     outline: `1px solid ${orange}`,
   },

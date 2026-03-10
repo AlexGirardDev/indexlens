@@ -964,12 +964,33 @@ test.describe("Preview search", () => {
 
     await extensionPage.getByTestId("rest-response-search-input").fill("alpha-needle");
     await expect(extensionPage.getByTestId("rest-response-search-count")).toHaveText("1/2");
+    const responseMatchLocator = extensionPage
+      .getByTestId("rest-response-viewer")
+      .locator(".cm-searchMatch");
+    const responseSelectedMatchLocator = extensionPage
+      .getByTestId("rest-response-viewer")
+      .locator(".cm-searchMatch-selected");
+    await expect(responseMatchLocator.first()).toBeVisible();
+    await expect.poll(async () => responseMatchLocator.count()).toBeGreaterThan(0);
+    await expect(responseSelectedMatchLocator).toHaveCount(1);
+    const firstResponseSelectedOffset = await responseSelectedMatchLocator.first().evaluate(
+      (el) => (el as HTMLElement).offsetTop,
+    );
 
     const responseScroller = extensionPage.getByTestId("rest-response-viewer").locator(".cm-scroller");
     const initialScrollTop = await responseScroller.evaluate((el) => el.scrollTop);
 
     await extensionPage.getByTestId("rest-response-search-next").click();
     await expect(extensionPage.getByTestId("rest-response-search-count")).toHaveText("2/2");
+    await expect(responseSelectedMatchLocator).toHaveCount(1);
+    await expect.poll(async () => {
+      return responseSelectedMatchLocator.first().evaluate(
+        (el) => (el as HTMLElement).offsetTop,
+      );
+    }).toBeGreaterThan(firstResponseSelectedOffset);
+    const secondResponseSelectedOffset = await responseSelectedMatchLocator.first().evaluate(
+      (el) => (el as HTMLElement).offsetTop,
+    );
 
     await expect.poll(async () => {
       return responseScroller.evaluate((el) => el.scrollTop);
@@ -977,6 +998,9 @@ test.describe("Preview search", () => {
 
     await extensionPage.getByTestId("rest-response-search-prev").click();
     await expect(extensionPage.getByTestId("rest-response-search-count")).toHaveText("1/2");
+    await expect.poll(async () => {
+      return responseSelectedMatchLocator.first().evaluate((el) => (el as HTMLElement).offsetTop);
+    }).toBeLessThan(secondResponseSelectedOffset);
   });
 
   test("supports match navigation in document preview sheet", async ({ extensionPage }) => {
@@ -1077,18 +1101,42 @@ test.describe("Preview search", () => {
 
     await extensionPage.getByTestId("document-preview-search-input").fill("alpha-needle");
     await expect(extensionPage.getByTestId("document-preview-search-count")).toHaveText("1/2");
+    const documentMatchLocator = extensionPage
+      .getByTestId("document-preview-viewer")
+      .locator(".cm-searchMatch");
+    const documentSelectedMatchLocator = extensionPage
+      .getByTestId("document-preview-viewer")
+      .locator(".cm-searchMatch-selected");
+    await expect(documentMatchLocator.first()).toBeVisible();
+    await expect.poll(async () => documentMatchLocator.count()).toBeGreaterThan(0);
+    await expect(documentSelectedMatchLocator).toHaveCount(1);
+    const firstDocumentSelectedOffset = await documentSelectedMatchLocator.first().evaluate(
+      (el) => (el as HTMLElement).offsetTop,
+    );
 
     const previewScroller = extensionPage.getByTestId("document-preview-viewer").locator(".cm-scroller");
     const initialScrollTop = await previewScroller.evaluate((el) => el.scrollTop);
 
     await extensionPage.getByTestId("document-preview-search-next").click();
     await expect(extensionPage.getByTestId("document-preview-search-count")).toHaveText("2/2");
+    await expect(documentSelectedMatchLocator).toHaveCount(1);
+    await expect.poll(async () => {
+      return documentSelectedMatchLocator.first().evaluate(
+        (el) => (el as HTMLElement).offsetTop,
+      );
+    }).toBeGreaterThan(firstDocumentSelectedOffset);
+    const secondDocumentSelectedOffset = await documentSelectedMatchLocator.first().evaluate(
+      (el) => (el as HTMLElement).offsetTop,
+    );
     await expect.poll(async () => {
       return previewScroller.evaluate((el) => el.scrollTop);
     }).toBeGreaterThan(initialScrollTop);
 
     await extensionPage.getByTestId("document-preview-search-prev").click();
     await expect(extensionPage.getByTestId("document-preview-search-count")).toHaveText("1/2");
+    await expect.poll(async () => {
+      return documentSelectedMatchLocator.first().evaluate((el) => (el as HTMLElement).offsetTop);
+    }).toBeLessThan(secondDocumentSelectedOffset);
   });
 });
 
