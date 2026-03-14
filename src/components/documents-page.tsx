@@ -149,7 +149,6 @@ export function DocumentsPage({
   const [patternMatchCount, setPatternMatchCount] = useState<number | null>(null);
   const debouncedPattern = useDebounce(indexPattern, 300);
   const [indexTargets, setIndexTargets] = useState<IndexTarget[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
   const queryTextRef = useRef("");
   const [sort, setSort] = useState<SortState | null>(null);
 
@@ -328,8 +327,11 @@ export function DocumentsPage({
         if (!signal.aborted) setLoading(false);
       }
     },
-    [cluster, activeTarget, page, pageSize, activeQuery, sort, fields, refreshKey],
+    [cluster, activeTarget, page, pageSize, activeQuery, sort, fields],
   );
+
+  const fetchDocumentsRef = useRef(fetchDocuments);
+  fetchDocumentsRef.current = fetchDocuments;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -701,7 +703,7 @@ export function DocumentsPage({
         onSuccess={() => {
           setDeleteDialogOpen(false);
           setSelected(new Set());
-          setRefreshKey((k) => k + 1);
+          fetchDocumentsRef.current(new AbortController().signal);
         }}
       />
 

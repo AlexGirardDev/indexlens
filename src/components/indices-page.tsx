@@ -208,8 +208,6 @@ export function IndicesPage({ cluster, onNavigateIndex, filter, onFilterChange }
   const [error, setError] = useState<string | null>(null);
   const [showSystem, setShowSystem] = useState(false);
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
-  const [refreshKey, setRefreshKey] = useState(0);
-
   // Selection state
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -268,8 +266,11 @@ export function IndicesPage({ cluster, onNavigateIndex, filter, onFilterChange }
         if (!signal.aborted) setLoading(false);
       }
     },
-    [cluster, debouncedFilter, refreshKey],
+    [cluster, debouncedFilter],
   );
+
+  const fetchIndicesRef = useRef(fetchIndices);
+  fetchIndicesRef.current = fetchIndices;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -332,7 +333,7 @@ export function IndicesPage({ cluster, onNavigateIndex, filter, onFilterChange }
   const handleAction = (action: string, indexNames: string[]) => {
     if (action === "refresh") {
       executeRefresh(cluster, indexNames, () => {
-        setRefreshKey((k) => k + 1);
+        fetchIndicesRef.current(new AbortController().signal);
         if (indexNames.length > 1) setSelected(new Set());
       });
       return;
@@ -341,7 +342,7 @@ export function IndicesPage({ cluster, onNavigateIndex, filter, onFilterChange }
   };
 
   const handleActionSuccess = () => {
-    setRefreshKey((k) => k + 1);
+    fetchIndicesRef.current(new AbortController().signal);
     if (actionDialog && actionDialog.indexNames.length > 1) {
       setSelected(new Set());
     }
