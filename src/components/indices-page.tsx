@@ -194,10 +194,11 @@ function formatDate(iso: string): string {
 interface IndicesPageProps {
   cluster: ClusterConfig;
   onNavigateIndex: (indexName: string) => void;
+  filter: string;
+  onFilterChange: (value: string) => void;
 }
 
-export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
-  const [filter, setFilter] = useState("");
+export function IndicesPage({ cluster, onNavigateIndex, filter, onFilterChange }: IndicesPageProps) {
   const debouncedFilter = useDebounce(filter, DEBOUNCE_MS);
 
   const [rows, setRows] = useState<IndexRow[]>([]);
@@ -355,7 +356,7 @@ export function IndicesPage({ cluster, onNavigateIndex }: IndicesPageProps) {
           <Input
             placeholder="Filter indices..."
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => onFilterChange(e.target.value)}
             className="pl-9"
           />
         </div>

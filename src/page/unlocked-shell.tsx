@@ -52,6 +52,9 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
     setVimMode(enabled);
   }, []);
 
+  // Indices filter (lifted so it persists across navigations)
+  const [indicesFilter, setIndicesFilter] = useState("");
+
   // REST query handoff
   const [pendingRestQuery, setPendingRestQuery] = useState<PendingRestQuery | null>(null);
   const pendingRestQueryRef = useRef<PendingRestQuery | null>(null);
@@ -306,7 +309,7 @@ export function UnlockedShell({ onLock }: UnlockedShellProps) {
             onVimModeChange={handleVimModeChange}
           />
         ) : page === "indices" ? (
-          <IndicesPage cluster={activeCluster} onNavigateIndex={navigateIndex} />
+          <IndicesPage cluster={activeCluster} onNavigateIndex={navigateIndex} filter={indicesFilter} onFilterChange={setIndicesFilter} />
         ) : page === "rest" ? (
           <RestPage
             cluster={activeCluster}
