@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { EditorView, keymap, lineNumbers, placeholder as cmPlaceholder, ViewPlugin } from "@codemirror/view";
-import { EditorState, Annotation } from "@codemirror/state";
+import { EditorState, Annotation, Transaction } from "@codemirror/state";
 import { vim, getCM } from "@replit/codemirror-vim";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
@@ -343,11 +343,11 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
 
   // Editor key — bump to force editor remount with new initial values
   const [editorKey, setEditorKey] = useState(0);
-  const initialBodyRef = useRef("{\n  \n}");
 
   const supportsBody = method === "POST" || method === "PUT";
   const bodyRef = useRef("");
   const endpointRef = useRef("");
+  const endpointEditorViewRef = useRef<EditorView | null>(null);
   const bodyEditorViewRef = useRef<EditorView | null>(null);
   const responseViewRef = useRef<EditorView | null>(null);
   const debouncedEndpoint = useDebounce(endpoint, 400);
@@ -451,6 +451,10 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
     return true;
   }, [supportsBody]);
 
+  const handleEndpointViewReady = useCallback((view: EditorView | null) => {
+    endpointEditorViewRef.current = view;
+  }, []);
+
   const handleBodyViewReady = useCallback((view: EditorView | null) => {
     bodyEditorViewRef.current = view;
   }, []);
@@ -500,11 +504,36 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
   const applyRequest = useCallback(
     (req: { method: string; endpoint: string; body: string }) => {
       setMethod(req.method);
-      setEndpoint(req.endpoint);
-      endpointRef.current = req.endpoint;
-      bodyRef.current = req.body;
-      initialBodyRef.current = req.body || "{\n  \n}";
-      setEditorKey((k) => k + 1);
+
+      // Update endpoint editor in-place if possible
+      const epView = endpointEditorViewRef.current;
+      if (epView) {
+        epView.dispatch({
+          changes: { from: 0, to: epView.state.doc.length, insert: req.endpoint },
+        });
+        endpointRef.current = req.endpoint;
+        setEndpoint(req.endpoint);
+      } else {
+        endpointRef.current = req.endpoint;
+        setEndpoint(req.endpoint);
+      }
+
+      // Update body editor in-place if possible
+      const newSupportsBody = req.method === "POST" || req.method === "PUT";
+      const bView = bodyEditorViewRef.current;
+      if (bView && newSupportsBody) {
+        const insertBody = req.body || "{\n  \n}";
+        bView.dispatch({
+          changes: { from: 0, to: bView.state.doc.length, insert: insertBody },
+        });
+        bodyRef.current = insertBody;
+      } else if (!epView || (newSupportsBody && !bView)) {
+        // Fallback: remount editors
+        bodyRef.current = req.body || "{\n  \n}";
+        setEditorKey((k) => k + 1);
+      } else {
+        bodyRef.current = req.body || "{\n  \n}";
+      }
     },
     [],
   );
@@ -587,6 +616,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
               indexNames={indexNames}
               initialValue={endpointRef.current}
               autoFocus
+              onViewReady={handleEndpointViewReady}
               onChange={(v) => {
                 const previousEndpoint = endpointRef.current;
                 const previousAutoMethod = autoMethodForEndpoint(previousEndpoint);
@@ -663,7 +693,7 @@ export function RestPage({ cluster, pendingQuery, consumePendingQuery, vimMode, 
               fields={fields}
               endpoint={debouncedEndpoint}
               cluster={cluster}
-              initialValue={initialBodyRef.current}
+              initialValue={bodyRef.current || "{\n  \n}"}
               onSend={handleSend}
               onChange={(v) => { bodyRef.current = v; }}
               onViewReady={handleBodyViewReady}
@@ -1052,6 +1082,7 @@ function EndpointEditor({
   onChange,
   onExecute,
   onFocusBodyEditor,
+  onViewReady,
   vimMode,
   onVimStatus,
   autoFocus,
@@ -1061,6 +1092,7 @@ function EndpointEditor({
   onChange: (value: string) => void;
   onExecute: () => void;
   onFocusBodyEditor?: () => boolean;
+  onViewReady?: (view: EditorView | null) => void;
   vimMode?: boolean;
   onVimStatus?: (status: VimStatus) => void;
   autoFocus?: boolean;
@@ -1142,11 +1174,13 @@ function EndpointEditor({
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    onViewReady?.(view);
     if (autoFocus) { view.focus(); }
 
     return () => {
       view.destroy();
       viewRef.current = null;
+      onViewReady?.(null);
     };
   }, [indexNames, vimMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1294,7 +1328,7 @@ function BodyEditor({
               view.dispatch({
                 changes: { from: 0, to: text.length, insert: formatted },
                 selection: { anchor: Math.min(newCursor, formatted.length) },
-                annotations: autoFormatAnnotation.of(true),
+                annotations: [autoFormatAnnotation.of(true), Transaction.addToHistory.of(false)],
               });
             } catch {
               // Invalid JSON, don't format
