@@ -1075,11 +1075,10 @@ function EndpointEditor({
   onFocusBodyEditorRef.current = onFocusBodyEditor;
   const onVimStatusRef = useRef(onVimStatus);
   onVimStatusRef.current = onVimStatus;
+  const docRef = useRef(initialValue ?? "");
 
   useEffect(() => {
     if (!containerRef.current) return;
-
-    const existingDoc = viewRef.current?.state.doc.toString();
 
     const extensions = [
       ...(vimMode ? [vim()] : []),
@@ -1123,7 +1122,9 @@ function EndpointEditor({
       cmPlaceholder("/my-index/_search"),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          onChangeRef.current(update.state.doc.toString());
+          const text = update.state.doc.toString();
+          docRef.current = text;
+          onChangeRef.current(text);
         }
       }),
       ...(vimMode ? [vimStatusPlugin(onVimStatusRef)] : []),
@@ -1135,7 +1136,7 @@ function EndpointEditor({
     ];
 
     const state = EditorState.create({
-      doc: existingDoc ?? initialValue ?? "",
+      doc: docRef.current,
       extensions,
     });
 
@@ -1190,16 +1191,15 @@ function BodyEditor({
   onChangeRef.current = onChange;
   const onVimStatusRef = useRef(onVimStatus);
   onVimStatusRef.current = onVimStatus;
+  const docRef = useRef(initialValue ?? "{\n  \n}");
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const existingDoc = viewRef.current?.state.doc.toString();
-
     let formatTimer: ReturnType<typeof setTimeout> | null = null;
 
     const state = EditorState.create({
-      doc: existingDoc ?? initialValue ?? "{\n  \n}",
+      doc: docRef.current,
       extensions: [
         ...(vimMode ? [vim()] : []),
         history(),
@@ -1263,7 +1263,9 @@ function BodyEditor({
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            onChangeRef.current(update.state.doc.toString());
+            const text = update.state.doc.toString();
+            docRef.current = text;
+            onChangeRef.current(text);
           }
         }),
         EditorView.updateListener.of((update) => {
