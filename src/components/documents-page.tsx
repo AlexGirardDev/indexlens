@@ -720,6 +720,8 @@ export function DocumentsPage({
       <DocumentViewerSheet
         hit={selectedHit}
         onClose={() => setSelectedHit(null)}
+        cluster={cluster}
+        onDocumentUpdated={() => fetchDocumentsRef.current(new AbortController().signal)}
       />
     </div>
   );
