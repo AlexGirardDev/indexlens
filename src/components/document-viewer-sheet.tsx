@@ -4,7 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { json } from "@codemirror/lang-json";
 import { foldGutter } from "@codemirror/language";
 import { cmViewerTheme } from "@/lib/codemirror-theme";
-import { CopyIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { CopyIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, SaveIcon, Undo2Icon, Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +22,9 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { esRequest } from "@/lib/es-client";
+import { toast } from "sonner";
+import type { ClusterConfig } from "@/types/cluster";
 
 interface SearchHit {
   _id: string;
@@ -36,6 +39,8 @@ interface SearchHit {
 interface DocumentViewerSheetProps {
   hit: SearchHit | null;
   onClose: () => void;
+  cluster: ClusterConfig;
+  onDocumentUpdated?: () => void;
 }
 
 function buildMetaObject(hit: SearchHit): Record<string, unknown> {
@@ -60,7 +65,7 @@ const EMPTY_SEARCH_STATE: ViewerSearchState = {
   totalMatches: 0,
 };
 
-export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) {
+export function DocumentViewerSheet({ hit, onClose, cluster, onDocumentUpdated }: DocumentViewerSheetProps) {
   const [showMeta, setShowMeta] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sheetWidth, setSheetWidth] = useState(DEFAULT_WIDTH);
@@ -68,6 +73,9 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
   const [searchState, setSearchState] = useState<ViewerSearchState>(EMPTY_SEARCH_STATE);
   const sourceViewRef = useRef<EditorView | null>(null);
   const isDragging = useRef(false);
+  const [editing, setEditing] = useState(false);
+  const [editedSource, setEditedSource] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -97,6 +105,53 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
     () => (hit ? JSON.stringify(hit._source, null, 2) : ""),
     [hit],
   );
+
+  const isDirty = editing && editedSource !== sourceFormatted;
+
+  // Reset edit state when hit changes
+  useEffect(() => {
+    setEditing(false);
+    setEditedSource("");
+  }, [hit]);
+
+  const handleSave = async () => {
+    if (!hit || !isDirty) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(editedSource);
+    } catch {
+      toast.error("Invalid JSON");
+      return;
+    }
+    setSaving(true);
+    try {
+      let path = `/${encodeURIComponent(hit._index)}/_doc/${encodeURIComponent(hit._id)}`;
+      if (hit._seq_no !== undefined && hit._primary_term !== undefined) {
+        path += `?if_seq_no=${hit._seq_no}&if_primary_term=${hit._primary_term}`;
+      }
+      await esRequest(cluster, path, {
+        method: "PUT",
+        body: JSON.stringify(parsed),
+      });
+      toast.success("Document saved");
+      setEditing(false);
+      onDocumentUpdated?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save document");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    setEditing(false);
+    setEditedSource(sourceFormatted);
+  };
+
+  const handleStartEditing = () => {
+    setEditing(true);
+    setEditedSource(sourceFormatted);
+  };
 
   const metaFormatted = useMemo(
     () => (hit ? JSON.stringify(buildMetaObject(hit), null, 2) : ""),
@@ -175,14 +230,40 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
             />
             Show metadata
           </label>
-          <Button variant="ghost" size="sm" onClick={handleCopy}>
-            {copied ? (
-              <CheckIcon className="size-4 text-green-500" />
-            ) : (
-              <CopyIcon className="size-4" />
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={handleCopy}>
+              {copied ? (
+                <CheckIcon className="size-4 text-green-500" />
+              ) : (
+                <CopyIcon className="size-4" />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button
+              variant={editing ? "default" : "ghost"}
+              size="sm"
+              onClick={handleStartEditing}
+            >
+              <PencilIcon className="size-4" />
+              Edit
+            </Button>
+            {editing && isDirty && (
+              <Button variant="ghost" size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <SaveIcon className="size-4" />
+                )}
+                Save
+              </Button>
             )}
-            {copied ? "Copied" : "Copy"}
-          </Button>
+            {editing && (
+              <Button variant="ghost" size="sm" onClick={handleDiscard}>
+                <Undo2Icon className="size-4" />
+                Discard
+              </Button>
+            )}
+          </div>
         </div>
         {showMeta && hit && (
           <div className="rounded-md border overflow-hidden max-h-40">
@@ -233,7 +314,9 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
         <div className="flex-1 overflow-hidden rounded-md border" data-testid="document-preview-viewer">
           {hit && (
             <JsonViewer
-              value={sourceFormatted}
+              value={editing ? editedSource : sourceFormatted}
+              editable={editing}
+              onChange={setEditedSource}
               onViewReady={handleSourceViewReady}
               onSearchStateChange={setSearchState}
             />
@@ -246,45 +329,99 @@ export function DocumentViewerSheet({ hit, onClose }: DocumentViewerSheetProps) 
 
 function JsonViewer({
   value,
+  editable,
+  onChange,
   onViewReady,
   onSearchStateChange,
 }: {
   value: string;
+  editable?: boolean;
+  onChange?: (value: string) => void;
   onViewReady?: (view: EditorView | null) => void;
   onSearchStateChange?: (searchState: ViewerSearchState) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const internalChangeRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  const onSearchStateChangeRef = useRef(onSearchStateChange);
 
+  // Keep callback refs up to date without triggering editor recreation
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    onSearchStateChangeRef.current = onSearchStateChange;
+  }, [onSearchStateChange]);
+
+  // Create/recreate the editor when editable mode changes
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const extensions = [
+      json(),
+      cmViewerTheme,
+      lineNumbers(),
+      foldGutter(),
+      ...createViewerSearchExtensions((view) => {
+        onSearchStateChangeRef.current?.(readViewerSearchState(view));
+      }),
+      EditorView.lineWrapping,
+    ];
+
+    if (!editable) {
+      extensions.unshift(EditorState.readOnly.of(true));
+    }
+
+    if (editable) {
+      extensions.push(
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            internalChangeRef.current = true;
+            onChangeRef.current?.(update.state.doc.toString());
+          }
+        }),
+      );
+    }
+
     const state = EditorState.create({
       doc: value,
-      extensions: [
-        EditorState.readOnly.of(true),
-        json(),
-        cmViewerTheme,
-        lineNumbers(),
-        foldGutter(),
-        ...createViewerSearchExtensions((view) => {
-          onSearchStateChange?.(readViewerSearchState(view));
-        }),
-        EditorView.lineWrapping,
-      ],
+      extensions,
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
     onViewReady?.(view);
-    onSearchStateChange?.(readViewerSearchState(view));
+    onSearchStateChangeRef.current?.(readViewerSearchState(view));
 
     return () => {
       view.destroy();
       viewRef.current = null;
       onViewReady?.(null);
     };
-  }, [value, onViewReady, onSearchStateChange]);
+    // Only recreate editor when editable mode changes – value updates are handled below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editable, onViewReady]);
+
+  // Update editor content when value changes externally (new document, discard, etc.)
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    // Skip if this value change originated from user typing inside the editor
+    if (internalChangeRef.current) {
+      internalChangeRef.current = false;
+      return;
+    }
+
+    const currentDoc = view.state.doc.toString();
+    if (currentDoc !== value) {
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: value },
+      });
+    }
+  }, [value]);
 
   return <div ref={containerRef} className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:outline-none" />;
 }
