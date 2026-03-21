@@ -342,7 +342,20 @@ function JsonViewer({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const internalChangeRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  const onSearchStateChangeRef = useRef(onSearchStateChange);
 
+  // Keep callback refs up to date without triggering editor recreation
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    onSearchStateChangeRef.current = onSearchStateChange;
+  }, [onSearchStateChange]);
+
+  // Create/recreate the editor when editable mode changes
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -352,7 +365,7 @@ function JsonViewer({
       lineNumbers(),
       foldGutter(),
       ...createViewerSearchExtensions((view) => {
-        onSearchStateChange?.(readViewerSearchState(view));
+        onSearchStateChangeRef.current?.(readViewerSearchState(view));
       }),
       EditorView.lineWrapping,
     ];
@@ -361,11 +374,12 @@ function JsonViewer({
       extensions.unshift(EditorState.readOnly.of(true));
     }
 
-    if (editable && onChange) {
+    if (editable) {
       extensions.push(
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            onChange(update.state.doc.toString());
+            internalChangeRef.current = true;
+            onChangeRef.current?.(update.state.doc.toString());
           }
         }),
       );
@@ -379,14 +393,35 @@ function JsonViewer({
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
     onViewReady?.(view);
-    onSearchStateChange?.(readViewerSearchState(view));
+    onSearchStateChangeRef.current?.(readViewerSearchState(view));
 
     return () => {
       view.destroy();
       viewRef.current = null;
       onViewReady?.(null);
     };
-  }, [value, editable, onChange, onViewReady, onSearchStateChange]);
+    // Only recreate editor when editable mode changes – value updates are handled below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editable, onViewReady]);
+
+  // Update editor content when value changes externally (new document, discard, etc.)
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    // Skip if this value change originated from user typing inside the editor
+    if (internalChangeRef.current) {
+      internalChangeRef.current = false;
+      return;
+    }
+
+    const currentDoc = view.state.doc.toString();
+    if (currentDoc !== value) {
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: value },
+      });
+    }
+  }, [value]);
 
   return <div ref={containerRef} className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:outline-none" />;
 }
